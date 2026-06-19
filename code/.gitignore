@@ -1,0 +1,6 @@
+.checkpoint.json
+.cache/
+.tmp/
+__pycache__/
+*.pyc
+.env
