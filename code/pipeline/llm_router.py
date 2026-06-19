@@ -13,6 +13,7 @@ LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'gemini')
 LLM_MODEL = os.getenv('LLM_MODEL', 'gemini/gemini-2.0-flash')
 LLM_API_KEY = os.getenv('LLM_API_KEY', os.getenv('GEMINI_API_KEY', ''))
 VISION_MODEL = os.getenv('VISION_MODEL', LLM_MODEL)
+FALLBACK_CHAIN = os.getenv('LLM_FALLBACK_CHAIN', '')
 
 
 class ConfigurationError(Exception):
@@ -69,6 +70,53 @@ def _is_retryable(exception):
     stop=stop_after_attempt(5),
     retry=retry_if_exception(_is_retryable)
 )
+def _build_completion_kwargs(messages, model, response_schema, temperature, timeout, api_key=None):
+    provider = model.split('/')[0] if '/' in model else LLM_PROVIDER
+    kwargs = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": 4096,
+        "timeout": timeout,
+        "num_retries": 0,
+    }
+    if api_key:
+        kwargs["api_key"] = api_key
+
+    if provider == 'gemini':
+        kwargs["response_format"] = {"type": "json_object"}
+        if response_schema:
+            kwargs["extra_body"] = {
+                "generation_config": {
+                    "response_mime_type": "application/json",
+                    "response_schema": response_schema
+                }
+            }
+    elif response_schema:
+        kwargs["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {"name": "response", "schema": response_schema, "strict": True}
+        }
+    else:
+        kwargs["response_format"] = {"type": "json_object"}
+
+    return kwargs, provider
+
+
+def _try_single_call(messages, model, response_schema, temperature, timeout, api_key=None):
+    kwargs, provider = _build_completion_kwargs(
+        messages, model, response_schema, temperature, timeout, api_key
+    )
+    try:
+        return litellm.completion(**kwargs)
+    except Exception:
+        logger.warning(f"Provider {provider} with {model} failed, retrying without schema")
+        kwargs.pop("api_key", None)
+        kwargs.pop("extra_body", None)
+        kwargs.pop("response_format", None)
+        return litellm.completion(**kwargs)
+
+
 def llm_complete(messages, model=None, api_key=None, response_schema=None, temperature=0.0, timeout=180):
     litellm.set_verbose = False
 
@@ -80,45 +128,37 @@ def llm_complete(messages, model=None, api_key=None, response_schema=None, tempe
             "No LLM API key found. Set LLM_API_KEY (or GEMINI_API_KEY) in .env"
         )
 
-    provider = model.split('/')[0] if '/' in model else LLM_PROVIDER
+    return _try_single_call(messages, model, response_schema, temperature, timeout, api_key)
 
-    completion_kwargs = {
-        "model": model,
-        "messages": messages,
-        "api_key": api_key,
-        "temperature": temperature,
-        "max_tokens": 4096,
-        "timeout": timeout,
-        "num_retries": 0,
-    }
 
-    if provider == 'gemini':
-        completion_kwargs["response_format"] = {"type": "json_object"}
-        if response_schema:
-            completion_kwargs["extra_body"] = {
-                "generation_config": {
-                    "response_mime_type": "application/json",
-                    "response_schema": response_schema
-                }
-            }
-    elif response_schema:
-        completion_kwargs["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {"name": "response", "schema": response_schema, "strict": True}
-        }
-    else:
-        completion_kwargs["response_format"] = {"type": "json_object"}
+def llm_complete_with_fallback(messages, model=None, response_schema=None, temperature=0.0, timeout=180):
+    litellm.set_verbose = False
 
-    try:
-        response = litellm.completion(**completion_kwargs)
-        return response
-    except Exception:
-        logger.warning(f"Provider {provider} failed, trying without schema")
-        if "extra_body" in completion_kwargs:
-            del completion_kwargs["extra_body"]
-        if "response_format" in completion_kwargs:
-            del completion_kwargs["response_format"]
-        return litellm.completion(**completion_kwargs)
+    model = model or VISION_MODEL
+
+    models_to_try = [model]
+    if FALLBACK_CHAIN:
+        fallback_models = [m.strip() for m in FALLBACK_CHAIN.split(',') if m.strip()]
+        models_to_try.extend(fallback_models)
+
+    last_error = None
+    for attempt_model in models_to_try:
+        try:
+            logger.info(f"Attempting LLM call with model: {attempt_model}")
+            return _try_single_call(
+                messages, attempt_model, response_schema, temperature,
+                timeout, api_key=None
+            )
+        except ConfigurationError:
+            raise
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Model {attempt_model} failed: {e}. Trying next fallback...")
+            continue
+
+    if last_error:
+        raise last_error
+    raise Exception("All LLM providers in fallback chain failed")
 
 
 def extract_json(response):

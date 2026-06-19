@@ -6,7 +6,7 @@ from pathlib import Path
 from config import STRUCTURED_OUTPUT_SCHEMA, CACHE_ENABLED, CACHE_DIR, MODEL_NAME
 from utils.image_utils import resize_image
 from utils.cache import ResponseCache
-from pipeline.llm_router import llm_complete, extract_json, get_token_usage, ConfigurationError
+from pipeline.llm_router import llm_complete_with_fallback, extract_json, get_token_usage, ConfigurationError
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ def analyze_with_llm(images, prompt, image_ids, token_tracker):
             })
     messages.append({"role": "user", "content": content_blocks})
 
-    response = llm_complete(
+    response = llm_complete_with_fallback(
         messages=messages,
         response_schema=STRUCTURED_OUTPUT_SCHEMA,
         temperature=0.0,

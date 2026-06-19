@@ -9,7 +9,7 @@ from io import BytesIO
 from PIL import Image
 
 from pipeline.llm_router import (
-    llm_complete, extract_json, _pil_to_base64,
+    llm_complete, llm_complete_with_fallback, extract_json, _pil_to_base64,
     _build_image_block, _build_text_block,
     ConfigurationError, get_token_usage
 )
@@ -85,6 +85,79 @@ class TestGetTokenUsage:
         usage = get_token_usage(mock_response)
         assert usage['input_tokens'] == 0
         assert usage['output_tokens'] == 0
+
+
+class TestLLMCompleteWithFallback:
+    @patch('pipeline.llm_router.litellm.completion')
+    def test_primary_succeeds(self, mock_completion):
+        mock_completion.return_value = MagicMock()
+        with patch('pipeline.llm_router.FALLBACK_CHAIN', 'openai/gpt-4o'):
+            result = llm_complete_with_fallback(
+                messages=[{"role": "user", "content": "hello"}],
+                model="gemini/gemini-2.0-flash",
+            )
+        assert result is not None
+        mock_completion.assert_called_once()
+
+    @patch('pipeline.llm_router.litellm.completion')
+    def test_fallback_on_failure(self, mock_completion):
+        mock_completion.side_effect = [
+            Exception("Gemini down"),
+            MagicMock(),
+        ]
+        with patch('pipeline.llm_router.FALLBACK_CHAIN', 'openai/gpt-4o'):
+            result = llm_complete_with_fallback(
+                messages=[{"role": "user", "content": "hello"}],
+                model="gemini/gemini-2.0-flash",
+            )
+        assert result is not None
+        assert mock_completion.call_count == 2
+
+    @patch('pipeline.llm_router.litellm.completion')
+    def test_all_fail_raises(self, mock_completion):
+        mock_completion.side_effect = Exception("All down")
+        with patch('pipeline.llm_router.FALLBACK_CHAIN', 'openai/gpt-4o'):
+            with pytest.raises(Exception):
+                llm_complete_with_fallback(
+                    messages=[{"role": "user", "content": "hello"}],
+                    model="gemini/gemini-2.0-flash",
+                )
+
+    @patch('pipeline.llm_router.litellm.completion')
+    def test_empty_fallback_chain_still_raises(self, mock_completion):
+        mock_completion.side_effect = Exception("Down")
+        with patch('pipeline.llm_router.FALLBACK_CHAIN', ''):
+            with pytest.raises(Exception):
+                llm_complete_with_fallback(
+                    messages=[{"role": "user", "content": "hello"}],
+                    model="gemini/gemini-2.0-flash",
+                )
+        assert mock_completion.call_count >= 1
+
+    @patch('pipeline.llm_router.litellm.completion')
+    def test_no_fallback_and_all_fail(self, mock_completion):
+        mock_completion.side_effect = Exception("API Error")
+        with patch('pipeline.llm_router.FALLBACK_CHAIN', ''):
+            with pytest.raises(Exception):
+                llm_complete_with_fallback(
+                    messages=[{"role": "user", "content": "hello"}],
+                    model="gemini/gemini-2.0-flash",
+                )
+
+    @patch('pipeline.llm_router.litellm.completion')
+    def test_multiple_fallbacks(self, mock_completion):
+        mock_completion.side_effect = [
+            Exception("Gemini down"),
+            Exception("OpenAI down"),
+            MagicMock(),
+        ]
+        with patch('pipeline.llm_router.FALLBACK_CHAIN', 'openai/gpt-4o,anthropic/claude-3'):
+            result = llm_complete_with_fallback(
+                messages=[{"role": "user", "content": "hello"}],
+                model="gemini/gemini-2.0-flash",
+            )
+        assert result is not None
+        assert mock_completion.call_count == 3
 
 
 class TestLLMComplete:
