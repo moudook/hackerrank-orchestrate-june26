@@ -1,12 +1,12 @@
 import json
-import os
 import logging
+import os
 import sys
 import time
 import uuid
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from functools import wraps
-from contextvars import ContextVar
 
 _request_id: ContextVar[str] = ContextVar('request_id', default='')
 

@@ -1,12 +1,13 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import json
 import logging
-import pytest
 
-from utils.logger import JSONFormatter, get_request_id, set_request_id, stage_log, setup_logging
+import pytest
+from utils.logger import JSONFormatter, get_request_id, set_request_id, setup_logging, stage_log
 
 
 class TestRequestID:

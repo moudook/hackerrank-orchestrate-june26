@@ -1,12 +1,13 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from pathlib import Path
 
-from pipeline.preprocessor import preprocess_claim, _extract_image_id, _normalize_path
-from pipeline.evidence_filter import get_relevant_rule, _detect_issue_from_text
-from pipeline.postprocessor import apply_claim_decision, _check_trust_manipulation
+from pipeline.evidence_filter import _detect_issue_from_text, get_relevant_rule
+from pipeline.postprocessor import _check_trust_manipulation, apply_claim_decision
+from pipeline.preprocessor import _extract_image_id, _normalize_path, preprocess_claim
 
 TEST_DIR = Path(__file__).resolve().parent.parent.parent / 'dataset'
 

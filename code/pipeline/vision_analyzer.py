@@ -1,10 +1,11 @@
 import logging
 from pathlib import Path
 
-from config import STRUCTURED_OUTPUT_SCHEMA, CACHE_ENABLED, CACHE_DIR, MODEL_NAME
-from utils.image_utils import resize_image
+from config import CACHE_DIR, CACHE_ENABLED, MODEL_NAME, STRUCTURED_OUTPUT_SCHEMA
 from utils.cache import ResponseCache
-from pipeline.llm_router import llm_complete_with_fallback, extract_json, get_token_usage, ConfigurationError
+from utils.image_utils import resize_image
+
+from pipeline.llm_router import ConfigurationError, extract_json, get_token_usage, llm_complete_with_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +92,8 @@ def analyze_with_llm(images, prompt, image_ids, token_tracker):
         if isinstance(item, str):
             content_blocks.append({"type": "text", "text": item})
         else:
-            import io
             import base64
+            import io
             buf = io.BytesIO()
             item.save(buf, format='JPEG', quality=85)
             b64 = base64.b64encode(buf.getvalue()).decode('utf-8')

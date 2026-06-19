@@ -1,15 +1,21 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-import pytest
-from unittest.mock import patch, MagicMock
-from PIL import Image
+from unittest.mock import MagicMock, patch
 
+import pytest
+from PIL import Image
 from pipeline.llm_router import (
-    llm_complete, llm_complete_with_fallback, extract_json, _pil_to_base64,
-    _build_image_block, _build_text_block,
-    ConfigurationError, get_token_usage
+    ConfigurationError,
+    _build_image_block,
+    _build_text_block,
+    _pil_to_base64,
+    extract_json,
+    get_token_usage,
+    llm_complete,
+    llm_complete_with_fallback,
 )
 
 

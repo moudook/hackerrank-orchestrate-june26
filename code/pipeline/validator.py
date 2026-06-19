@@ -1,9 +1,7 @@
-import os
 import logging
-from config import (
-    ALLOWED_ISSUE_TYPES, ALLOWED_CLAIM_STATUS, ALLOWED_OBJECT_PARTS,
-    ALLOWED_RISK_FLAGS, ALLOWED_SEVERITY
-)
+import os
+
+from config import ALLOWED_CLAIM_STATUS, ALLOWED_ISSUE_TYPES, ALLOWED_OBJECT_PARTS, ALLOWED_RISK_FLAGS, ALLOWED_SEVERITY
 
 logger = logging.getLogger(__name__)
 

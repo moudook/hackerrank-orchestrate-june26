@@ -1,27 +1,28 @@
-import sys
-import os
-import logging
 import concurrent.futures
+import logging
+import os
+import sys
 
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.logger import setup_logging
+
 setup_logging()
 logger = logging.getLogger(__name__)
 
 import pandas as pd  # noqa: E402
-
-from pipeline.loader import load_all, load_sample_claims  # noqa: E402
-from pipeline.preprocessor import preprocess_claim  # noqa: E402
+from config import CACHE_DIR, CACHE_ENABLED, MODEL_NAME, RATE_LIMIT_RPM, RATE_LIMIT_TPM  # noqa: E402
 from pipeline.evidence_filter import get_relevant_rule  # noqa: E402
-from pipeline.vision_analyzer import safe_run_vision_analysis  # noqa: E402
+from pipeline.loader import load_all, load_sample_claims  # noqa: E402
 from pipeline.postprocessor import apply_claim_decision  # noqa: E402
+from pipeline.preprocessor import preprocess_claim  # noqa: E402
 from pipeline.validator import validate_output  # noqa: E402
-from utils.token_tracker import TokenTracker  # noqa: E402
-from utils.rate_limiter import TokenBucketRateLimiter  # noqa: E402
+from pipeline.vision_analyzer import safe_run_vision_analysis  # noqa: E402
 from utils.cache import ResponseCache  # noqa: E402
+from utils.rate_limiter import TokenBucketRateLimiter  # noqa: E402
+from utils.token_tracker import TokenTracker  # noqa: E402
+
 from evaluation.metrics import compute_accuracy, compute_detailed_metrics  # noqa: E402
-from config import MODEL_NAME, RATE_LIMIT_RPM, RATE_LIMIT_TPM, CACHE_DIR, CACHE_ENABLED  # noqa: E402
 
 OUTPUT_COLUMNS = [
     'user_id', 'image_paths', 'user_claim', 'claim_object',
@@ -207,8 +208,7 @@ def _write_report(opt_metrics, opt_detailed, op_info, baseline_metrics, sample, 
 
 
 def main():
-    claims, user_history, evidence = load_all()
-    sample = load_sample_claims()
+    run_evaluation()
 
 
 if __name__ == '__main__':

@@ -1,13 +1,15 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import base64
-import pytest
-import pandas as pd
-from unittest.mock import patch, MagicMock
-from pathlib import Path
 from io import BytesIO
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pandas as pd
+import pytest
 from PIL import Image
 
 FIXTURE_DIR = Path(__file__).resolve().parent / 'fixtures'
@@ -171,7 +173,7 @@ class TestIntegrationLLMRouter:
     @patch('pipeline.llm_router.litellm.completion')
     def test_router_with_image_payload(self, mock_completion):
         mock_completion.return_value = _make_response('{"issue_type": "dent", "confidence": 0.9}')
-        from pipeline.llm_router import llm_complete_with_fallback, extract_json
+        from pipeline.llm_router import extract_json, llm_complete_with_fallback
 
         img = Image.new('RGB', (100, 100), color='gray')
         buf = BytesIO()
@@ -208,7 +210,7 @@ class TestIntegrationPipelineOutput:
         assert OUTPUT_COLUMNS == expected
 
     def test_single_claim_processing(self):
-        from pipeline.loader import load_claims, load_user_history, load_evidence_requirements
+        from pipeline.loader import load_claims, load_evidence_requirements, load_user_history
 
         data_dir = Path(__file__).resolve().parent.parent.parent / 'dataset'
         claims = load_claims(str(data_dir / 'sample_claims.csv'))

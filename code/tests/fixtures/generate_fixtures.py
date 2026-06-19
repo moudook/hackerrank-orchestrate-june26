@@ -1,10 +1,12 @@
 """Generate test fixture images and data for integration tests."""
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from PIL import Image, ImageDraw
 from pathlib import Path
+
+from PIL import Image, ImageDraw
 
 FIXTURE_DIR = Path(__file__).resolve().parent
 

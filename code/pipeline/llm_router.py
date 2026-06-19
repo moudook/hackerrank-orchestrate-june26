@@ -1,11 +1,12 @@
-import os
+import base64
 import io
 import json
-import base64
 import logging
-from PIL import Image
-from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception
+import os
+
 import litellm
+from PIL import Image
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
 

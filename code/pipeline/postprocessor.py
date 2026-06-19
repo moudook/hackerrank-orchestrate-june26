@@ -1,5 +1,6 @@
 import logging
-from config import ALLOWED_RISK_FLAGS, ALLOWED_OBJECT_PARTS
+
+from config import ALLOWED_OBJECT_PARTS, ALLOWED_RISK_FLAGS
 
 logger = logging.getLogger(__name__)
 
