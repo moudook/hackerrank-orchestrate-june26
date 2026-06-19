@@ -5,7 +5,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import json
 import logging
 import pytest
-from io import StringIO
 
 from utils.logger import JSONFormatter, get_request_id, set_request_id, stage_log, setup_logging
 

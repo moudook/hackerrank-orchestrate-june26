@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 
 GROUND_TRUTH_COLUMNS = ['issue_type', 'object_part', 'claim_status']
 

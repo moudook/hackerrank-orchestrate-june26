@@ -2,7 +2,6 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-import json
 import base64
 import pytest
 import pandas as pd
@@ -210,7 +209,6 @@ class TestIntegrationPipelineOutput:
 
     def test_single_claim_processing(self):
         from pipeline.loader import load_claims, load_user_history, load_evidence_requirements
-        import tempfile
 
         data_dir = Path(__file__).resolve().parent.parent.parent / 'dataset'
         claims = load_claims(str(data_dir / 'sample_claims.csv'))

@@ -175,7 +175,7 @@ def extract_json(response):
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        logger.error(f"Failed to parse LLM response as JSON")
+        logger.error("Failed to parse LLM response as JSON")
         return None
 
 

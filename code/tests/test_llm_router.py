@@ -2,10 +2,8 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-import json
 import pytest
 from unittest.mock import patch, MagicMock
-from io import BytesIO
 from PIL import Image
 
 from pipeline.llm_router import (

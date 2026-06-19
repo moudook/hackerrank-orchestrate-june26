@@ -9,19 +9,19 @@ from utils.logger import setup_logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
-import pandas as pd
+import pandas as pd  # noqa: E402
 
-from pipeline.loader import load_all, load_sample_claims
-from pipeline.preprocessor import preprocess_claim
-from pipeline.evidence_filter import get_relevant_rule
-from pipeline.vision_analyzer import safe_run_vision_analysis
-from pipeline.postprocessor import apply_claim_decision
-from pipeline.validator import validate_output
-from utils.token_tracker import TokenTracker
-from utils.rate_limiter import TokenBucketRateLimiter
-from utils.cache import ResponseCache
-from evaluation.metrics import compute_accuracy, compute_detailed_metrics
-from config import MODEL_NAME, RATE_LIMIT_RPM, RATE_LIMIT_TPM, CACHE_DIR, CACHE_ENABLED
+from pipeline.loader import load_all, load_sample_claims  # noqa: E402
+from pipeline.preprocessor import preprocess_claim  # noqa: E402
+from pipeline.evidence_filter import get_relevant_rule  # noqa: E402
+from pipeline.vision_analyzer import safe_run_vision_analysis  # noqa: E402
+from pipeline.postprocessor import apply_claim_decision  # noqa: E402
+from pipeline.validator import validate_output  # noqa: E402
+from utils.token_tracker import TokenTracker  # noqa: E402
+from utils.rate_limiter import TokenBucketRateLimiter  # noqa: E402
+from utils.cache import ResponseCache  # noqa: E402
+from evaluation.metrics import compute_accuracy, compute_detailed_metrics  # noqa: E402
+from config import MODEL_NAME, RATE_LIMIT_RPM, RATE_LIMIT_TPM, CACHE_DIR, CACHE_ENABLED  # noqa: E402
 
 OUTPUT_COLUMNS = [
     'user_id', 'image_paths', 'user_claim', 'claim_object',
@@ -104,7 +104,7 @@ def run_optimized_strategy(sample, user_history, evidence):
     total = len(sample)
     avg_latency = round(elapsed / total, 1) if total else 0.0
 
-    cs = detailed['claim_status']
+    detailed['claim_status']
     op_info = {
         'model_calls': summary['total_calls'],
         'input_tokens': summary['input_tokens'],
@@ -191,11 +191,11 @@ def main():
 
     print("\n=== Evaluation Results ===")
     print(f"  Sample claims: {total}")
-    print(f"  Strategy A (Baseline):")
+    print("  Strategy A (Baseline):")
     print(f"    claim_status: {baseline_metrics['claim_status']['accuracy']}%")
     print(f"    issue_type: {baseline_metrics['issue_type']['accuracy']}%")
     print(f"    object_part: {baseline_metrics['object_part']['accuracy']}%")
-    print(f"  Strategy B (Optimized):")
+    print("  Strategy B (Optimized):")
     print(f"    claim_status: {opt_metrics['claim_status']['accuracy']}%")
     print(f"    issue_type: {opt_metrics['issue_type']['accuracy']}%")
     print(f"    object_part: {opt_metrics['object_part']['accuracy']}%")

@@ -10,18 +10,18 @@ from utils.logger import setup_logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
-import pandas as pd
+import pandas as pd  # noqa: E402
 
-from pipeline.loader import load_all
-from pipeline.preprocessor import preprocess_claim
-from pipeline.evidence_filter import get_relevant_rule
-from pipeline.vision_analyzer import safe_run_vision_analysis
-from pipeline.postprocessor import apply_claim_decision
-from pipeline.validator import validate_output
-from utils.token_tracker import TokenTracker
-from utils.rate_limiter import TokenBucketRateLimiter
-from utils.checkpoint import CheckpointManager
-from config import CACHE_ENABLED, CACHE_DIR, validate_config
+from pipeline.loader import load_all  # noqa: E402
+from pipeline.preprocessor import preprocess_claim  # noqa: E402
+from pipeline.evidence_filter import get_relevant_rule  # noqa: E402
+from pipeline.vision_analyzer import safe_run_vision_analysis  # noqa: E402
+from pipeline.postprocessor import apply_claim_decision  # noqa: E402
+from pipeline.validator import validate_output  # noqa: E402
+from utils.token_tracker import TokenTracker  # noqa: E402
+from utils.rate_limiter import TokenBucketRateLimiter  # noqa: E402
+from utils.checkpoint import CheckpointManager  # noqa: E402
+from config import CACHE_ENABLED, CACHE_DIR, validate_config  # noqa: E402
 
 OUTPUT_COLUMNS = [
     'user_id', 'image_paths', 'user_claim', 'claim_object',
@@ -129,7 +129,7 @@ def main():
 
     summary = token_tracker.summary()
     rl_stats = rate_limiter.stats()
-    cached_count = len([r for r in all_results if r[1].get('claim_status_justification', '').startswith('Claim status')])
+    len([r for r in all_results if r[1].get('claim_status_justification', '').startswith('Claim status')])
     print("\n=== Pipeline Summary ===")
     print(f"  Claims processed: {len(final_results)}")
     print(f"  New API calls: {summary['total_calls']}")

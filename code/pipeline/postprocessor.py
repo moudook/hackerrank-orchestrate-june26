@@ -71,7 +71,7 @@ def _build_risk_flags(vision_result, preprocessed, history):
     if history:
         rejected = int(history.get('rejected_claim', 0))
         recent = int(history.get('last_90_days_claim_count', 0))
-        total = int(history.get('past_claim_count', 0))
+        int(history.get('past_claim_count', 0))
         history_flags = str(history.get('history_flags', ''))
 
         if rejected >= 3 or 'user_history_risk' in history_flags:

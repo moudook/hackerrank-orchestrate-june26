@@ -1,5 +1,3 @@
-import json
-import os
 import logging
 from pathlib import Path
 
@@ -93,7 +91,8 @@ def analyze_with_llm(images, prompt, image_ids, token_tracker):
         if isinstance(item, str):
             content_blocks.append({"type": "text", "text": item})
         else:
-            import io, base64
+            import io
+            import base64
             buf = io.BytesIO()
             item.save(buf, format='JPEG', quality=85)
             b64 = base64.b64encode(buf.getvalue()).decode('utf-8')

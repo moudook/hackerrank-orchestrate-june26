@@ -2,17 +2,11 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-import pytest
 from pathlib import Path
 
 from pipeline.preprocessor import preprocess_claim, _extract_image_id, _normalize_path
 from pipeline.evidence_filter import get_relevant_rule, _detect_issue_from_text
 from pipeline.postprocessor import apply_claim_decision, _check_trust_manipulation
-from pipeline.validator import validate_output
-from utils.cache import ResponseCache
-from utils.checkpoint import CheckpointManager
-from utils.rate_limiter import TokenBucketRateLimiter
-from config import ALLOWED_ISSUE_TYPES, ALLOWED_CLAIM_STATUS, ALLOWED_OBJECT_PARTS
 
 TEST_DIR = Path(__file__).resolve().parent.parent.parent / 'dataset'
 
@@ -39,7 +33,6 @@ class TestPreprocessor:
         assert result['valid_image'] is False
 
     def test_preprocess_na_claim(self):
-        import pandas as pd
         row = {'user_id': 'test_1', 'image_paths': None, 'user_claim': float('nan'), 'claim_object': 'car'}
         result = preprocess_claim(row, None)
         assert result['user_claim'] == ''
@@ -154,6 +147,5 @@ class TestPostprocessor:
         pre = {'user_id': 'u1', 'image_paths': ['img1'], 'image_ids': ['img_1'],
                'user_claim': 'test', 'claim_object': 'car', 'valid_image': True,
                'history': {'rejected_claim': 3, 'last_90_days_claim_count': 2, 'past_claim_count': 5, 'history_flags': 'user_history_risk'}}
-        vision = {'risk_flags': 'none', 'image_quality_issues': 'none', 'manipulation_suspected': False}
         result = apply_claim_decision(pre, None, {'minimum_image_evidence': 'test'})
         assert result is not None

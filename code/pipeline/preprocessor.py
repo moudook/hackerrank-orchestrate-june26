@@ -1,5 +1,4 @@
 import os
-import io
 import logging
 from urllib.parse import unquote
 import pandas as pd
