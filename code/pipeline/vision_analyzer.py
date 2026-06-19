@@ -1,8 +1,8 @@
 import json
 import re
 import logging
-import google.generativeai as genai
-from google.api_core.exceptions import ResourceExhausted
+from google import genai
+from google.genai import errors
 from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception
 
 from config import GEMINI_API_KEY, MODEL_NAME
@@ -10,8 +10,7 @@ from utils.image_utils import resize_image
 
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel(MODEL_NAME)
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 TOKENS_PER_512_IMAGE = 258
 
@@ -68,7 +67,9 @@ def _estimate_tokens(prompt, num_images):
 
 
 def _is_retryable(exception):
-    return not isinstance(exception, ResourceExhausted)
+    if isinstance(exception, errors.APIError):
+        return exception.code != 429
+    return True
 
 
 @retry(
@@ -85,7 +86,10 @@ def analyze_with_gemini(images, prompt, token_tracker):
     input_tokens = _estimate_tokens(prompt, len(processed_images))
     token_tracker.add_input(input_tokens)
 
-    response = model.generate_content([prompt] + processed_images)
+    response = client.models.generate_content(
+        model=MODEL_NAME,
+        contents=[prompt] + processed_images
+    )
 
     output_tokens = int(len(response.text.split()) * 1.3)
     token_tracker.add_output(output_tokens)
