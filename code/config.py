@@ -1,17 +1,21 @@
 import os
+import sys
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-MODEL_NAME = 'gemini-2.5-flash'
-MAX_IMAGES_PER_CALL = 4
-RATE_LIMIT_RPM = 2000
-RATE_LIMIT_TPM = 4000000
-CACHE_ENABLED = True
-CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.cache')
-SAFEGUARD_ENABLED = True
-TEMP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.tmp')
+MODEL_NAME = os.getenv('MODEL_NAME', 'gemini-2.5-flash')
+MAX_IMAGES_PER_CALL = int(os.getenv('MAX_IMAGES_PER_CALL', '4'))
+RATE_LIMIT_RPM = int(os.getenv('RATE_LIMIT_RPM', '2000'))
+RATE_LIMIT_TPM = int(os.getenv('RATE_LIMIT_TPM', '4000000'))
+CACHE_ENABLED = os.getenv('CACHE_ENABLED', 'true').lower() in ('true', '1', 'yes')
+CACHE_DIR = os.getenv('CACHE_DIR', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.cache'))
+SAFEGUARD_ENABLED = os.getenv('SAFEGUARD_ENABLED', 'true').lower() in ('true', '1', 'yes')
+TEMP_DIR = os.getenv('TEMP_DIR', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.tmp'))
 
 ALLOWED_ISSUE_TYPES = ['dent', 'scratch', 'crack', 'glass_shatter', 'broken_part',
                        'missing_part', 'torn_packaging', 'crushed_packaging',
@@ -36,56 +40,46 @@ ALLOWED_SEVERITY = ['none', 'low', 'medium', 'high', 'unknown']
 STRUCTURED_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
-        "issue_type": {
-            "type": "string",
-            "enum": ALLOWED_ISSUE_TYPES
-        },
-        "object_part": {
-            "type": "string"
-        },
-        "confidence": {
-            "type": "number",
-            "minimum": 0.0,
-            "maximum": 1.0
-        },
-        "supporting_image_ids": {
-            "type": "array",
-            "items": {"type": "string"}
-        },
-        "evidence_standard_met": {
-            "type": "boolean"
-        },
-        "visual_description": {
-            "type": "string",
-            "maxLength": 120
-        },
-        "severity": {
-            "type": "string",
-            "enum": ALLOWED_SEVERITY
-        },
-        "image_quality": {
-            "type": "string",
-            "enum": ["good", "fair", "poor"]
-        },
+        "issue_type": {"type": "string", "enum": ALLOWED_ISSUE_TYPES},
+        "object_part": {"type": "string"},
+        "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        "supporting_image_ids": {"type": "array", "items": {"type": "string"}},
+        "evidence_standard_met": {"type": "boolean"},
+        "visual_description": {"type": "string", "maxLength": 120},
+        "severity": {"type": "string", "enum": ALLOWED_SEVERITY},
+        "image_quality": {"type": "string", "enum": ["good", "fair", "poor"]},
         "image_quality_issues": {
             "type": "array",
-            "items": {
-                "type": "string",
-                "enum": ["blurry", "dark", "glare", "cropped", "obstructed", "wrong_angle", "none"]
-            }
+            "items": {"type": "string", "enum": ["blurry", "dark", "glare", "cropped", "obstructed", "wrong_angle", "none"]}
         },
-        "manipulation_suspected": {
-            "type": "boolean"
-        },
-        "risk_flags": {
-            "type": "array",
-            "items": {
-                "type": "string",
-                "enum": ALLOWED_RISK_FLAGS
-            }
-        }
+        "manipulation_suspected": {"type": "boolean"},
+        "risk_flags": {"type": "array", "items": {"type": "string", "enum": ALLOWED_RISK_FLAGS}}
     },
     "required": ["issue_type", "object_part", "confidence", "supporting_image_ids",
                   "evidence_standard_met", "visual_description", "severity",
                   "image_quality", "image_quality_issues", "manipulation_suspected", "risk_flags"]
 }
+
+
+def validate_config():
+    errors = []
+
+    if not GEMINI_API_KEY:
+        errors.append("GEMINI_API_KEY is not set in .env file")
+    elif len(GEMINI_API_KEY) < 10:
+        errors.append(f"GEMINI_API_KEY appears invalid (too short: {len(GEMINI_API_KEY)} chars)")
+
+    if MAX_IMAGES_PER_CALL < 1 or MAX_IMAGES_PER_CALL > 10:
+        errors.append(f"MAX_IMAGES_PER_CALL={MAX_IMAGES_PER_CALL} is out of range (1-10)")
+
+    if RATE_LIMIT_RPM < 1:
+        errors.append(f"RATE_LIMIT_RPM={RATE_LIMIT_RPM} is invalid")
+
+    if RATE_LIMIT_TPM < 1:
+        errors.append(f"RATE_LIMIT_TPM={RATE_LIMIT_TPM} is invalid")
+
+    if errors:
+        for err in errors:
+            logger.error(f"Config error: {err}")
+        return False
+    return True

@@ -20,7 +20,7 @@ from pipeline.validator import validate_output
 from utils.token_tracker import TokenTracker
 from utils.rate_limiter import TokenBucketRateLimiter
 from utils.checkpoint import CheckpointManager
-from config import CACHE_ENABLED, CACHE_DIR
+from config import CACHE_ENABLED, CACHE_DIR, validate_config
 
 OUTPUT_COLUMNS = [
     'user_id', 'image_paths', 'user_claim', 'claim_object',
@@ -73,6 +73,10 @@ def process_single_claim(idx, row, user_history, evidence, token_tracker, rate_l
 
 
 def main():
+    if not validate_config():
+        logger.error("Configuration validation failed. Exiting.")
+        sys.exit(1)
+
     claims, user_history, evidence = load_all()
     logger.info(f"Loaded {len(claims)} claims, {len(user_history)} history rows, {len(evidence)} evidence rows")
 
