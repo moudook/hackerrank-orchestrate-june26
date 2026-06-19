@@ -242,7 +242,27 @@ def _write_report(opt_metrics, opt_detailed, op_info, baseline_metrics, sample, 
 
 
 def main():
-    run_evaluation()
+    import argparse
+    parser = argparse.ArgumentParser(
+        description='Evaluate pipeline on sample claims',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python evaluation/main.py                    # Run full evaluation with report
+  python evaluation/main.py --baseline-only    # Skip VLM pipeline, baseline only
+  python evaluation/main.py --quick            # Baseline only, print results
+  python evaluation/main.py --output report.md # Custom report path
+        """
+    )
+    parser.add_argument('--baseline-only', action='store_true',
+                        help='Skip Strategy B (optimized VLM pipeline)')
+    parser.add_argument('--quick', action='store_true',
+                        help='Baseline only with compact output')
+    parser.add_argument('--output', type=str, default=None,
+                        help='Custom output report path')
+    args = parser.parse_args()
+
+    run_evaluation(report_path=args.output)
 
 
 if __name__ == '__main__':
