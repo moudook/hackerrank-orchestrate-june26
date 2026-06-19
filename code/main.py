@@ -1,30 +1,42 @@
 import sys
 import os
+import logging
+
 sys.path.insert(0, os.path.dirname(__file__))
+
+logging.basicConfig(level=logging.INFO, format='%(levelname)s | %(message)s')
 
 from pipeline.loader import load_all, load_sample_claims
 from pipeline.preprocessor import preprocess_claim
-
-TEST_ROWS = 5
+from pipeline.evidence_filter import get_relevant_rule
+from pipeline.vision_analyzer import run_vision_analysis
+from utils.token_tracker import TokenTracker
 
 
 def main():
     claims, user_history, evidence = load_all()
-    print(f"Loaded {len(claims)} claims, {len(user_history)} history rows, {len(evidence)} evidence rows")
-
     sample = load_sample_claims()
-    print(f"Loaded {len(sample)} sample claims")
 
-    print(f"\n--- Testing preprocessor on first {TEST_ROWS} sample rows ---\n")
-    for i, (_, row) in enumerate(sample.head(TEST_ROWS).iterrows()):
-        result = preprocess_claim(row, user_history)
-        print(f"Row {i+1}: user={result['user_id']}, object={result['claim_object']}, "
-              f"valid_image={result['valid_image']}, image_ids={result['image_ids']}, "
-              f"history={'yes' if result['history'] else 'no'}")
-        if result['valid_image']:
-            for p in result['image_paths']:
-                print(f"  Path: {p}")
-        print()
+    row = sample.iloc[0]
+    print(f"=== Testing 1 claim: user={row['user_id']}, object={row['claim_object']} ===\n")
+
+    preprocessed = preprocess_claim(row, user_history)
+    print(f"Preprocessor: {preprocessed['image_ids']}, valid={preprocessed['valid_image']}")
+
+    rule = get_relevant_rule(preprocessed['claim_object'], preprocessed['user_claim'], evidence)
+    print(f"Evidence rule: {rule['requirement_id']} -> {rule['minimum_image_evidence'][:60]}...\n")
+
+    tracker = TokenTracker()
+    result = run_vision_analysis(preprocessed, rule, tracker)
+
+    if result:
+        print("=== Gemini Response ===")
+        for k, v in result.items():
+            print(f"  {k}: {v}")
+        print(f"\nToken cost: ${tracker.get_cost():.6f}")
+        print(f"Calls: {tracker.calls}")
+    else:
+        print("Vision analysis returned None (no valid images or parsing failed)")
 
 
 if __name__ == '__main__':
