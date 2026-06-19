@@ -91,12 +91,19 @@ def process_single_claim(idx: int, row: pd.Series, user_history: pd.DataFrame, e
     return validated
 
 
-def main():
+def main(eval_mode=False):
     if not validate_config():
         logger.error("Configuration validation failed. Exiting.")
         sys.exit(1)
 
-    claims, user_history, evidence = load_all()
+    if eval_mode:
+        from pipeline.loader import load_evidence_requirements, load_sample_claims
+        claims = load_sample_claims()
+        evidence = load_evidence_requirements()
+        user_history = pd.DataFrame({'user_id': ['none'], 'rejected_claim': [0], 'last_90_days_claim_count': [0], 'history_flags': ['']})
+        logger.info(f"Evaluation mode: loaded {len(claims)} sample claims")
+    else:
+        claims, user_history, evidence = load_all()
     logger.info(f"Loaded {len(claims)} claims, {len(user_history)} history rows, {len(evidence)} evidence rows")
 
     token_tracker = TokenTracker()
@@ -158,14 +165,20 @@ def main():
 
     summary = token_tracker.summary()
     rl_stats = rate_limiter.stats()
+    safety_blocked = sum(1 for r in final_results if 'safety gate blocked' in r.get('claim_status_justification', '').lower())
+    safety_flagged = sum(1 for r in final_results if 'manual review suggested' in r.get('claim_status_justification', '').lower())
+    vlm_results = sum(1 for r in final_results if r.get('claim_status') in ('supported', 'contradicted'))
     print("\n=== Pipeline Summary ===")
     print(f"  Claims processed: {len(final_results)}")
-    print(f"  New API calls: {summary['total_calls']}")
     print(f"  From checkpoint: {checkpoint.get_completed_count()}")
+    print(f"  New API calls: {summary['total_calls']}")
     print(f"  Input tokens: {summary['input_tokens']}")
     print(f"  Output tokens: {summary['output_tokens']}")
     print(f"  Estimated cost: ${summary['estimated_cost']:.6f}")
     print(f"  Elapsed time: {summary['elapsed_seconds']:.1f}s")
+    print(f"  Safety gate blocked: {safety_blocked}")
+    print(f"  Safety gate flagged: {safety_flagged}")
+    print(f"  VLM decisions made: {vlm_results}")
     print(f"  Peak RPM: {rl_stats['current_rpm']}")
     print(f"  Peak TPM: {rl_stats['current_tpm']}")
 
@@ -176,10 +189,13 @@ def cli():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py                       # Run production pipeline on claims.csv
-  python main.py --reset-checkpoint    # Clear checkpoint and re-run all claims
-  python main.py --verbose             # Enable debug logging
-  python main.py --model gemini-2.5-flash  # Override model from env/config
+  python main.py                            # Run production pipeline on claims.csv
+  python main.py --verbose                  # Enable debug logging
+  python main.py --dry-run                  # Data validation + safety gate only
+  python main.py --eval                     # Run evaluation on sample_claims.csv
+  python main.py --reset-checkpoint         # Clear checkpoint and re-run all claims
+  python main.py --skip-checkpoint          # Skip checkpoint (re-process all)
+  python main.py --model gemini-2.5-flash   # Override model from env/config
         """
     )
     parser.add_argument('--reset-checkpoint', action='store_true',
@@ -192,6 +208,10 @@ Examples:
                         help='Override output CSV path')
     parser.add_argument('--dry-run', action='store_true',
                         help='Load and validate data, run preprocessor + safety gate, skip VLM calls')
+    parser.add_argument('--eval', action='store_true',
+                        help='Run evaluation on sample_claims.csv instead of claims.csv')
+    parser.add_argument('--skip-checkpoint', action='store_true',
+                        help='Ignore existing checkpoint and re-process all claims')
     args = parser.parse_args()
 
     if args.verbose:
@@ -219,7 +239,13 @@ Examples:
         cm.reset()
         logger.info("Checkpoint reset. All claims will be re-processed.")
 
-    main()
+    if args.skip_checkpoint:
+        import os
+        if os.path.exists(CHECKPOINT_PATH):
+            os.remove(CHECKPOINT_PATH)
+            logger.info("Checkpoint file removed. All claims will be re-processed.")
+
+    main(eval_mode=args.eval)
 
 
 if __name__ == '__main__':
