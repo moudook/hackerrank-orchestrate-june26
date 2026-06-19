@@ -1,0 +1,5 @@
+google-generativeai
+pandas
+pillow
+python-dotenv
+tenacity
