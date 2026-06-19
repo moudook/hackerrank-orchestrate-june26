@@ -1,109 +1,72 @@
 import sys
 import os
-import json
 import logging
 
 sys.path.insert(0, os.path.dirname(__file__))
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s | %(message)s')
+logger = logging.getLogger(__name__)
 
-from pipeline.loader import load_all, load_sample_claims
+import pandas as pd
+
+from pipeline.loader import load_all
 from pipeline.preprocessor import preprocess_claim
 from pipeline.evidence_filter import get_relevant_rule
+from pipeline.vision_analyzer import safe_run_vision_analysis
 from pipeline.postprocessor import apply_claim_decision
 from pipeline.validator import validate_output
+from utils.token_tracker import TokenTracker
+from utils.rate_limiter import RateLimiter
 
-EXPECTED_COLUMNS = [
+OUTPUT_COLUMNS = [
     'user_id', 'image_paths', 'user_claim', 'claim_object',
     'evidence_standard_met', 'evidence_standard_met_reason', 'risk_flags',
     'issue_type', 'object_part', 'claim_status', 'claim_status_justification',
     'supporting_image_ids', 'valid_image', 'severity'
 ]
 
-
-def _mock_vision(overrides=None):
-    base = {
-        'issue_type': 'dent',
-        'object_part': 'rear_bumper',
-        'confidence': 0.92,
-        'supporting_image_ids': 'img_1',
-        'evidence_standard_met': True,
-        'visual_description': 'clear dent on rear bumper',
-        'severity': 'medium',
-        'risk_flags': ''
-    }
-    if overrides:
-        base.update(overrides)
-    return base
-
-
-NO_VISION = object()
-
-
-def test_case(label, sample_row, user_history, evidence, vision_overrides=None, vision_src=None):
-    print(f"\n{'=' * 60}")
-    print(f"TEST: {label}")
-    print(f"{'=' * 60}")
-
-    preprocessed = preprocess_claim(sample_row, user_history)
-    rule = get_relevant_rule(preprocessed['claim_object'], preprocessed['user_claim'], evidence)
-
-    if vision_src is NO_VISION:
-        vision_result = None
-    elif vision_overrides:
-        vision_result = _mock_vision(vision_overrides)
-    else:
-        vision_result = _mock_vision()
-
-    decision = apply_claim_decision(preprocessed, vision_result, rule)
-    validated = validate_output(decision)
-
-    for col in EXPECTED_COLUMNS:
-        val = validated.get(col, 'MISSING')
-        print(f"  {col}: {val}")
-
-    missing = [c for c in EXPECTED_COLUMNS if c not in validated]
-    if missing:
-        print(f"  ** MISSING COLUMNS: {missing}")
-    else:
-        print(f"  All {len(EXPECTED_COLUMNS)} columns present.")
-
-    return validated
+REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+OUTPUT_PATH = os.path.join(REPO_ROOT, 'output.csv')
 
 
 def main():
     claims, user_history, evidence = load_all()
-    sample = load_sample_claims()
+    logger.info(f"Loaded {len(claims)} claims, {len(user_history)} history rows, {len(evidence)} evidence rows")
 
-    print(f"Loaded {len(sample)} sample claims")
+    token_tracker = TokenTracker()
+    rate_limiter = RateLimiter()
 
-    test_case("Supported claim (dent, high confidence)", sample.iloc[0], user_history, evidence)
+    results = []
+    for idx, (_, row) in enumerate(claims.iterrows()):
+        logger.info(f"[{idx+1}/{len(claims)}] Processing user={row['user_id']}, object={row['claim_object']}")
 
-    test_case("No valid images", sample.iloc[0], user_history, evidence,
-              vision_src=NO_VISION)
+        preprocessed = preprocess_claim(row, user_history)
 
-    test_case("Evidence standard not met", sample.iloc[0], user_history, evidence,
-              vision_overrides={'evidence_standard_met': False})
+        evidence_rule = get_relevant_rule(preprocessed['claim_object'], preprocessed['user_claim'], evidence)
 
-    test_case("Low confidence (< 0.5)", sample.iloc[4], user_history, evidence,
-              vision_overrides={'confidence': 0.3, 'issue_type': 'scratch',
-                                'object_part': 'rear_bumper', 'severity': 'low'})
+        vision_result = safe_run_vision_analysis(preprocessed, evidence_rule, token_tracker, rate_limiter)
 
-    test_case("None issue type (undamaged)", sample.iloc[4], user_history, evidence,
-              vision_overrides={'issue_type': 'none', 'object_part': 'rear_bumper',
-                                'confidence': 0.85, 'visual_description': 'rear bumper undamaged'})
+        decision = apply_claim_decision(preprocessed, vision_result, evidence_rule)
 
-    test_case("None with not visible description", sample.iloc[4], user_history, evidence,
-              vision_overrides={'issue_type': 'none', 'confidence': 0.85,
-                                'visual_description': 'part not visible in image'})
+        validated = validate_output(decision)
 
-    test_case("Invalid enum correction", sample.iloc[0], user_history, evidence,
-              vision_overrides={'issue_type': 'scratched', 'object_part': 'back_bumper',
-                                'severity': 'critical'})
+        results.append(validated)
 
-    test_case("History risk (rejected >= 3)", sample.iloc[4], user_history, evidence,
-              vision_overrides={'issue_type': 'scratch', 'object_part': 'rear_bumper',
-                                'confidence': 0.85})
+        if (idx + 1) % 5 == 0:
+            logger.info(f"Progress: {idx+1}/{len(claims)} processed, cost so far: ${token_tracker.get_cost():.4f}")
+
+    output_df = pd.DataFrame(results, columns=OUTPUT_COLUMNS)
+    output_df.to_csv(OUTPUT_PATH, index=False, quoting=1)
+    logger.info(f"Output written to {OUTPUT_PATH} ({len(results)} rows)")
+
+    summary = token_tracker.summary()
+    print("\n=== Pipeline Summary ===")
+    print(f"  Claims processed: {len(results)}")
+    print(f"  Total model calls: {summary['total_calls']}")
+    print(f"  Input tokens: {summary['input_tokens']}")
+    print(f"  Output tokens: {summary['output_tokens']}")
+    print(f"  Estimated cost: ${summary['estimated_cost']:.6f}")
+    print(f"  Elapsed time: {summary['elapsed_seconds']:.1f}s")
 
 
 if __name__ == '__main__':

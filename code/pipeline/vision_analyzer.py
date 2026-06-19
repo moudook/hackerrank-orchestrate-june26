@@ -2,7 +2,8 @@ import json
 import re
 import logging
 import google.generativeai as genai
-from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+from google.api_core.exceptions import ResourceExhausted
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception
 
 from config import GEMINI_API_KEY, MODEL_NAME
 from utils.image_utils import resize_image
@@ -66,10 +67,14 @@ def _estimate_tokens(prompt, num_images):
     return text_tokens + image_tokens
 
 
+def _is_retryable(exception):
+    return not isinstance(exception, ResourceExhausted)
+
+
 @retry(
     wait=wait_exponential(multiplier=2, min=4, max=60),
     stop=stop_after_attempt(5),
-    retry=retry_if_exception_type((Exception,))
+    retry=retry_if_exception(_is_retryable)
 )
 def analyze_with_gemini(images, prompt, token_tracker):
     processed_images = []
@@ -114,3 +119,29 @@ def run_vision_analysis(preprocessed, evidence_rule, token_tracker):
 
     logger.info(f"Sending {len(preprocessed['image_paths'])} images to Gemini for user {preprocessed['user_id']}")
     return analyze_with_gemini(preprocessed['image_paths'], prompt, token_tracker)
+
+
+FALLBACK_VISION_RESULT = {
+    'issue_type': 'unknown',
+    'object_part': 'unknown',
+    'confidence': 0.0,
+    'supporting_image_ids': 'none',
+    'evidence_standard_met': False,
+    'visual_description': 'API call failed after retries',
+    'severity': 'unknown',
+    'risk_flags': 'manual_review_required'
+}
+
+
+def safe_run_vision_analysis(preprocessed, evidence_rule, token_tracker, rate_limiter=None):
+    if not preprocessed['valid_image']:
+        return None
+
+    if rate_limiter:
+        rate_limiter.wait_if_needed()
+
+    try:
+        return run_vision_analysis(preprocessed, evidence_rule, token_tracker)
+    except Exception as e:
+        logger.error(f"Vision analysis failed for user {preprocessed['user_id']}: {e}")
+        return dict(FALLBACK_VISION_RESULT)
