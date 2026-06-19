@@ -148,5 +148,19 @@ class TestPostprocessor:
         pre = {'user_id': 'u1', 'image_paths': ['img1'], 'image_ids': ['img_1'],
                'user_claim': 'test', 'claim_object': 'car', 'valid_image': True,
                'history': {'rejected_claim': 3, 'last_90_days_claim_count': 2, 'past_claim_count': 5, 'history_flags': 'user_history_risk'}}
+        vision = {'risk_flags': 'none', 'image_quality_issues': 'none', 'manipulation_suspected': False}
         result = apply_claim_decision(pre, None, {'minimum_image_evidence': 'test'})
         assert result is not None
+
+    def test_decision_with_override_risk_flags(self):
+        pre = {'user_id': 'u_override', 'image_paths': ['img1'], 'image_ids': ['img_1'],
+               'user_claim': 'test override', 'claim_object': 'car', 'history': None, 'valid_image': True}
+        result = apply_claim_decision(
+            pre, None, {'minimum_image_evidence': 'test'},
+            override_risk_flags='possible_manipulation;manual_review_required',
+            override_justification='Safety gate blocked: possible manipulation'
+        )
+        assert result['claim_status'] == 'not_enough_information'
+        assert 'possible_manipulation' in result['risk_flags']
+        assert 'manual_review_required' in result['risk_flags']
+        assert 'Safety gate blocked' in result['claim_status_justification']
