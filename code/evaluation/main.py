@@ -11,7 +11,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 import pandas as pd  # noqa: E402
-from config import CACHE_DIR, CACHE_ENABLED, MODEL_NAME, RATE_LIMIT_RPM, RATE_LIMIT_TPM  # noqa: E402
+from config import CACHE_DIR, CACHE_ENABLED, MODEL_NAME  # noqa: E402
 from pipeline.evidence_filter import get_relevant_rule  # noqa: E402
 from pipeline.loader import load_all, load_sample_claims  # noqa: E402
 from pipeline.postprocessor import apply_claim_decision  # noqa: E402
@@ -20,7 +20,7 @@ from pipeline.safety_gate import evaluate_safety_gate  # noqa: E402
 from pipeline.validator import validate_output  # noqa: E402
 from pipeline.vision_analyzer import safe_run_vision_analysis  # noqa: E402
 from utils.cache import ResponseCache  # noqa: E402
-from utils.rate_limiter import TokenBucketRateLimiter  # noqa: E402
+from utils.rate_limiter import AdaptiveRateLimiter  # noqa: E402
 from utils.token_tracker import TokenTracker  # noqa: E402
 
 from evaluation.metrics import compute_accuracy, compute_detailed_metrics  # noqa: E402
@@ -71,7 +71,7 @@ def run_optimized_strategy(sample, user_history, evidence):
     logger.info("Running Strategy B: Optimized VLM pipeline")
 
     token_tracker = TokenTracker()
-    rate_limiter = TokenBucketRateLimiter(rpm=RATE_LIMIT_RPM, tpm=RATE_LIMIT_TPM)
+    rate_limiter = AdaptiveRateLimiter()
     cache = ResponseCache(CACHE_DIR, enabled=CACHE_ENABLED)
 
     def evaluate_single(item):
@@ -93,10 +93,11 @@ def run_optimized_strategy(sample, user_history, evidence):
             validated = validate_output(decision)
             return validated, num_images
 
-        estimated_tokens = 1000 + num_images * 258
-        rate_limiter.acquire(estimated_tokens)
-
-        vision_result = safe_run_vision_analysis(preprocessed, evidence_rule, token_tracker, rate_limiter)
+        rate_limiter.acquire()
+        try:
+            vision_result = safe_run_vision_analysis(preprocessed, evidence_rule, token_tracker, rate_limiter)
+        finally:
+            rate_limiter.release()
         if gate_result:
             if vision_result:
                 existing = vision_result.get('risk_flags', 'none')
@@ -143,6 +144,8 @@ def run_optimized_strategy(sample, user_history, evidence):
         'cache_misses': cache._misses if hasattr(cache, '_misses') else 0,
         'safety_blocked': safety_gate_stats['blocked'],
         'safety_flagged': safety_gate_stats['flagged'],
+        'consecutive_429': rate_limiter.stats().get('consecutive_429', 0),
+        'cooldown_remaining': rate_limiter.stats().get('cooldown_remaining', 0),
     }
 
     return metrics, detailed, op_info
@@ -203,8 +206,8 @@ def _write_report(opt_metrics, opt_detailed, op_info, baseline_metrics, sample, 
         'cost': op_info['cost'],
         'peak_tpm': op_info['peak_tpm'],
         'peak_rpm': op_info['peak_rpm'],
-        'rate_limit_rpm': RATE_LIMIT_RPM,
-        'rate_limit_tpm': RATE_LIMIT_TPM,
+        'adaptive_consecutive_429': op_info.get('consecutive_429', 0),
+        'adaptive_cooldown_remaining': op_info.get('cooldown_remaining', 0),
         'safety_blocked': op_info['safety_blocked'],
         'safety_flagged': op_info['safety_flagged'],
         'cache_dir': str(CACHE_DIR) if CACHE_DIR else 'disabled',

@@ -1,0 +1,33 @@
+[project]
+name = "orchestrate-evidence-review"
+version = "1.0.0"
+description = "Multi-modal evidence review pipeline for HackerRank Orchestrate"
+requires-python = ">=3.10"
+dependencies = [
+    "litellm>=1.60.0",
+    "pandas>=2.0.0",
+    "pillow>=10.0.0",
+    "python-dotenv>=1.0.0",
+    "tenacity>=8.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+    "ruff>=0.6.0",
+    "mypy>=1.10.0",
+]
+gemini = [
+    "google-genai>=1.0.0",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

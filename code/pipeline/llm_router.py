@@ -8,13 +8,13 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import litellm
 from PIL import Image
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+
 
 logger = logging.getLogger(__name__)
 
-LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'gemini')
-LLM_MODEL = os.getenv('LLM_MODEL', 'gemini/gemini-2.0-flash')
-LLM_API_KEY = os.getenv('LLM_API_KEY', os.getenv('GEMINI_API_KEY', ''))
+LLM_PROVIDER = os.getenv('LLM_PROVIDER', '')
+LLM_MODEL = os.getenv('LLM_MODEL', '')
+LLM_API_KEY = os.getenv('LLM_API_KEY', '')
 VISION_MODEL = os.getenv('VISION_MODEL', LLM_MODEL)
 FALLBACK_CHAIN = os.getenv('LLM_FALLBACK_CHAIN', '')
 
@@ -84,20 +84,6 @@ def _extract_retry_after(error: BaseException) -> float:
     return 0.0
 
 
-def _is_retryable(exception: BaseException) -> bool:
-    if isinstance(exception, ConfigurationError):
-        return False
-    if isinstance(exception, RateLimitError):
-        return True
-    try:
-        status = getattr(exception, 'status_code', 0) or getattr(exception, 'code', 0)
-        if status == 429:
-            return True
-        return status not in (401, 403)
-    except Exception:
-        return True
-
-
 def _wrap_exception(e: Exception) -> Exception:
     msg = str(e)
     if '429' in msg or 'rate_limit' in msg.lower() or 'quota' in msg.lower() or 'resource_exhausted' in msg.lower():
@@ -106,11 +92,6 @@ def _wrap_exception(e: Exception) -> Exception:
     return e
 
 
-@retry(
-    wait=wait_exponential(multiplier=2, min=4, max=120),
-    stop=stop_after_attempt(6),
-    retry=retry_if_exception(_is_retryable)
-)
 def _build_completion_kwargs(messages: List[Dict[str, Any]], model: str, response_schema: Optional[Dict[str, Any]], temperature: float, timeout: int, api_key: Optional[str] = None) -> Tuple[Dict[str, Any], str]:
     provider = model.split('/')[0] if '/' in model else LLM_PROVIDER
     kwargs = {
@@ -124,20 +105,21 @@ def _build_completion_kwargs(messages: List[Dict[str, Any]], model: str, respons
     if api_key:
         kwargs["api_key"] = api_key
 
-    if provider == 'gemini':
-        kwargs["response_format"] = {"type": "json_object"}
-        if response_schema:
-            kwargs["extra_body"] = {
-                "generation_config": {
-                    "response_mime_type": "application/json",
-                    "response_schema": response_schema
+    if response_schema:
+        if provider in ('gemini', 'anthropic', 'groq', 'openrouter'):
+            kwargs["response_format"] = {"type": "json_object"}
+            if provider == 'gemini':
+                kwargs["extra_body"] = {
+                    "generation_config": {
+                        "response_mime_type": "application/json",
+                        "response_schema": response_schema
+                    }
                 }
+        else:
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "response", "schema": response_schema, "strict": True}
             }
-    elif response_schema:
-        kwargs["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {"name": "response", "schema": response_schema, "strict": True}
-        }
     else:
         kwargs["response_format"] = {"type": "json_object"}
 
@@ -148,6 +130,28 @@ def _try_single_call(messages: List[Dict[str, Any]], model: str, response_schema
     kwargs, provider = _build_completion_kwargs(
         messages, model, response_schema, temperature, timeout, api_key
     )
+    max_retries = 3
+    for attempt in range(max_retries + 1):
+        try:
+            if rate_limiter:
+                rate_limiter.wait_for_cooldown()
+            result = litellm.completion(**kwargs)
+            if rate_limiter:
+                rate_limiter.note_success()
+            return result
+        except Exception as e:
+            wrapped = _wrap_exception(e)
+            if isinstance(wrapped, RateLimitError):
+                if rate_limiter:
+                    rate_limiter.note_429(str(wrapped))
+                if attempt < max_retries:
+                    continue
+                raise wrapped
+            logger.warning(f"Provider {provider} with {model} failed ({type(wrapped).__name__}), retrying without schema")
+            kwargs.pop("api_key", None)
+            kwargs.pop("extra_body", None)
+            kwargs.pop("response_format", None)
+            break
     try:
         if rate_limiter:
             rate_limiter.wait_for_cooldown()
@@ -156,26 +160,10 @@ def _try_single_call(messages: List[Dict[str, Any]], model: str, response_schema
             rate_limiter.note_success()
         return result
     except Exception as e:
-        wrapped = _wrap_exception(e)
-        if rate_limiter and isinstance(wrapped, RateLimitError):
-            rate_limiter.note_429(str(wrapped))
-            if wrapped.retry_after > 0:
-                import time
-                time.sleep(min(wrapped.retry_after + 1, 120))
-        logger.warning(f"Provider {provider} with {model} failed ({type(wrapped).__name__}), retrying without schema")
-        kwargs.pop("api_key", None)
-        kwargs.pop("extra_body", None)
-        kwargs.pop("response_format", None)
-        try:
-            result = litellm.completion(**kwargs)
-            if rate_limiter:
-                rate_limiter.note_success()
-            return result
-        except Exception as e2:
-            wrapped2 = _wrap_exception(e2)
-            if rate_limiter and isinstance(wrapped2, RateLimitError):
-                rate_limiter.note_429(str(wrapped2))
-            raise wrapped2
+        wrapped2 = _wrap_exception(e)
+        if rate_limiter and isinstance(wrapped2, RateLimitError):
+            rate_limiter.note_429(str(wrapped2))
+        raise wrapped2
 
 
 def llm_complete(messages: List[Dict[str, Any]], model: Optional[str] = None, api_key: Optional[str] = None, response_schema: Optional[Dict[str, Any]] = None, temperature: float = 0.0, timeout: int = 180, rate_limiter=None) -> Any:
@@ -186,7 +174,7 @@ def llm_complete(messages: List[Dict[str, Any]], model: Optional[str] = None, ap
 
     if not api_key:
         raise ConfigurationError(
-            "No LLM API key found. Set LLM_API_KEY (or GEMINI_API_KEY) in .env"
+            "No LLM API key found. Set LLM_API_KEY (or a provider-specific key like GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY) in .env"
         )
 
     return _try_single_call(messages, model, response_schema, temperature, timeout, api_key, rate_limiter)
@@ -222,22 +210,71 @@ def llm_complete_with_fallback(messages: List[Dict[str, Any]], model: Optional[s
     raise Exception("All LLM providers in fallback chain failed")
 
 
+def _strip_think_tags(text: str) -> str:
+    import re
+    return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+
+
+def _clean_response_text(text: str) -> str:
+    text = _strip_think_tags(text)
+    text = re.sub(r'```(?:json)?\s*', '', text)
+    text = re.sub(r'\s*```', '', text)
+    text = text.strip()
+    return text
+
+
+def _try_parse_json(text: str) -> Optional[Dict]:
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], dict):
+        logger.warning(f"LLM returned JSON array with {len(parsed)} items, using first item")
+        return parsed[0]
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
+def _find_json_object(text: str) -> Optional[Dict]:
+    brace_depth = 0
+    start = -1
+    for i, ch in enumerate(text):
+        if ch == '{':
+            if start == -1:
+                start = i
+            brace_depth += 1
+        elif ch == '}':
+            brace_depth -= 1
+            if brace_depth == 0 and start != -1:
+                candidate = text[start:i + 1]
+                result = _try_parse_json(candidate)
+                if result is not None:
+                    return result
+                start = -1
+    if start != -1:
+        candidate = text[start:]
+        result = _try_parse_json(candidate)
+        if result is not None:
+            return result
+    return None
+
+
 def extract_json(response: Any) -> Optional[Dict]:
     text = response.choices[0].message.content if response.choices else ''
     if not text:
         logger.error("Empty response from LLM")
         return None
-    text = text.strip()
-    if text.startswith('```'):
-        text = text.strip('`')
-        if text.startswith('json'):
-            text = text[4:]
-        text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        logger.error("Failed to parse LLM response as JSON")
-        return None
+    text = _clean_response_text(text)
+    parsed = _try_parse_json(text)
+    if parsed is not None:
+        return parsed
+    parsed = _find_json_object(text)
+    if parsed is not None:
+        logger.warning("Found JSON object via brace matching after direct parse failed")
+        return parsed
+    logger.error("Failed to parse LLM response as JSON")
+    return None
 
 
 def get_token_usage(response: Any) -> Dict:

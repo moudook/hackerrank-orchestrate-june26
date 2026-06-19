@@ -89,8 +89,8 @@ All configurable via `code/.env`:
 | Variable | Default | Description |
 |---|---|---|
 | `LLM_PROVIDER` | `gemini` | Primary provider (`gemini`, `openai`, `anthropic`, etc.) |
-| `LLM_MODEL` | `gemini/gemini-2.0-flash` | Full LiteLLM model string for text |
-| `VISION_MODEL` | `gemini/gemini-2.0-flash` | Full LiteLLM model string for vision |
+| `LLM_MODEL` | `gemini/gemini-2.5-flash-lite` | Full LiteLLM model string for text |
+| `VISION_MODEL` | `gemini/gemini-2.5-flash-lite` | Full LiteLLM model string for vision |
 | `LLM_API_KEY` | — | API key for primary provider |
 | `LLM_FALLBACK_CHAIN` | — | Comma-separated fallback models (e.g. `openai/gpt-4o,anthropic/claude-sonnet-4-20250514`) |
 | `MAX_IMAGES_PER_CALL` | `4` | Max images per claim |
@@ -105,7 +105,7 @@ Set the appropriate env var. LiteLLM reads per-provider keys automatically:
 
 | Provider | Env Var | Example Model String |
 |---|---|---|
-| Gemini | `GEMINI_API_KEY` or `LLM_API_KEY` | `gemini/gemini-2.0-flash` |
+| Gemini | `GEMINI_API_KEY` or `LLM_API_KEY` | `gemini/gemini-2.5-flash` |
 | OpenAI | `OPENAI_API_KEY` | `openai/gpt-4o` |
 | Anthropic | `ANTHROPIC_API_KEY` | `anthropic/claude-sonnet-4-20250514` |
 | xAI | `XAI_API_KEY` | `xai/grok-2-vision` |
@@ -184,11 +184,14 @@ ruff check code/
 
 ```bash
 # Basic run
-cd code && python main.py
+cd code && python main.py --output ../output.csv
 
 # With options
 python main.py --model openai/gpt-4o --output ../output.csv --verbose
 python main.py --reset-checkpoint
+python main.py --eval                     # Evaluate on sample claims
+python main.py --skip-checkpoint          # Ignore cache
+python main.py --dry-run                  # Safety gate only
 ```
 
 ## Submission

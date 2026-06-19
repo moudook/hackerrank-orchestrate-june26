@@ -13,7 +13,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 import pandas as pd  # noqa: E402
-from config import CACHE_DIR, CACHE_ENABLED, validate_config  # noqa: E402
+from config import CACHE_DIR, CACHE_ENABLED, MAX_WORKERS, validate_config  # noqa: E402
 from pipeline.evidence_filter import get_relevant_rule  # noqa: E402
 from pipeline.loader import load_all  # noqa: E402
 from pipeline.postprocessor import apply_claim_decision  # noqa: E402
@@ -22,7 +22,7 @@ from pipeline.safety_gate import evaluate_safety_gate  # noqa: E402
 from pipeline.validator import validate_output  # noqa: E402
 from pipeline.vision_analyzer import safe_run_vision_analysis  # noqa: E402
 from utils.checkpoint import CheckpointManager  # noqa: E402
-from utils.rate_limiter import TokenBucketRateLimiter  # noqa: E402
+from utils.rate_limiter import AdaptiveRateLimiter  # noqa: E402
 from utils.token_tracker import TokenTracker  # noqa: E402
 
 OUTPUT_COLUMNS = [
@@ -59,7 +59,7 @@ def build_output_row(row: pd.Series, preprocessed: Dict[str, Any], decision: Opt
     }
 
 
-def process_single_claim(idx: int, row: pd.Series, user_history: pd.DataFrame, evidence: pd.DataFrame, token_tracker: TokenTracker, rate_limiter: TokenBucketRateLimiter) -> Dict[str, Any]:
+def process_single_claim(idx: int, row: pd.Series, user_history: pd.DataFrame, evidence: pd.DataFrame, token_tracker: TokenTracker, rate_limiter: AdaptiveRateLimiter) -> Dict[str, Any]:
     user_id = row['user_id']
     logger.info(f"[{idx+1}] Processing user={user_id}, object={row['claim_object']}")
 
@@ -76,10 +76,12 @@ def process_single_claim(idx: int, row: pd.Series, user_history: pd.DataFrame, e
         validated = validate_output(decision)
         return validated
 
-    estimated_tokens = 1000 + len(preprocessed['image_paths']) * 258
-    rate_limiter.acquire(estimated_tokens)
+    rate_limiter.acquire()
+    try:
+        vision_result = safe_run_vision_analysis(preprocessed, evidence_rule, token_tracker, rate_limiter)
+    finally:
+        rate_limiter.release()
 
-    vision_result = safe_run_vision_analysis(preprocessed, evidence_rule, token_tracker, rate_limiter)
     if gate_result:
         if vision_result:
             existing = vision_result.get('risk_flags', 'none')
@@ -107,7 +109,7 @@ def main(eval_mode=False):
     logger.info(f"Loaded {len(claims)} claims, {len(user_history)} history rows, {len(evidence)} evidence rows")
 
     token_tracker = TokenTracker()
-    rate_limiter = TokenBucketRateLimiter()
+    rate_limiter = AdaptiveRateLimiter()
     checkpoint = CheckpointManager(CHECKPOINT_PATH)
 
     if CACHE_ENABLED and CACHE_DIR:
@@ -144,7 +146,7 @@ def main(eval_mode=False):
             checkpoint.mark_processed(row['user_id'], result)
             return idx, result
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             new_results = list(executor.map(worker, remaining_indices))
 
         all_results.extend(new_results)
@@ -195,7 +197,7 @@ Examples:
   python main.py --eval                     # Run evaluation on sample_claims.csv
   python main.py --reset-checkpoint         # Clear checkpoint and re-run all claims
   python main.py --skip-checkpoint          # Skip checkpoint (re-process all)
-  python main.py --model gemini-2.5-flash   # Override model from env/config
+  python main.py --model groq/qwen/qwen3.6-27b   # Override model from env/config
         """
     )
     parser.add_argument('--reset-checkpoint', action='store_true',
@@ -203,7 +205,7 @@ Examples:
     parser.add_argument('--verbose', action='store_true',
                         help='Enable debug-level logging')
     parser.add_argument('--model', type=str, default=None,
-                        help='Override Gemini model name')
+                        help='Override model (LiteLLM format, e.g. groq/qwen/qwen3.6-27b)')
     parser.add_argument('--output', type=str, default=None,
                         help='Override output CSV path')
     parser.add_argument('--dry-run', action='store_true',

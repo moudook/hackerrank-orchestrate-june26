@@ -2,10 +2,10 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from config import CACHE_DIR, CACHE_ENABLED, MODEL_NAME, STRUCTURED_OUTPUT_SCHEMA
+from config import CACHE_DIR, CACHE_ENABLED, VISION_MODEL, STRUCTURED_OUTPUT_SCHEMA
 from utils.cache import ResponseCache
 from utils.image_utils import resize_image
-from utils.rate_limiter import TokenBucketRateLimiter
+from utils.rate_limiter import AdaptiveRateLimiter
 from utils.token_tracker import TokenTracker
 
 from pipeline.llm_router import ConfigurationError, extract_json, get_token_usage, llm_complete_with_fallback
@@ -27,8 +27,8 @@ def _build_prompt(claim_object: str, user_claim: str, minimum_evidence: str, ima
         f"User claim: {user_claim}\n"
         f"Minimum evidence required: {minimum_evidence}\n\n"
         f"Submitted images:\n{image_section}\n\n"
-        f"Analyze each image carefully. Determine:\n"
-        f"1. What issue type is visible (if any)\n"
+        f"Review all images together and determine:\n"
+        f"1. What issue type is visible (if any) — single overall assessment\n"
         f"2. Which object part is affected\n"
         f"3. The confidence level of your assessment\n"
         f"4. Which image IDs support your finding\n"
@@ -37,7 +37,7 @@ def _build_prompt(claim_object: str, user_claim: str, minimum_evidence: str, ima
         f"7. The quality of each image (blurry, dark, etc.)\n"
         f"8. Whether manipulation is suspected\n"
         f"9. Any risk flags that apply\n\n"
-        f"Return ONLY valid JSON matching the provided schema."
+        f"Return a single JSON object (NOT an array), matching the provided schema exactly."
     )
 
 
@@ -66,13 +66,13 @@ def _parse_response(parsed: Dict) -> Dict:
     return parsed
 
 
-def analyze_with_llm(images: List[str], prompt: str, image_ids: List[str], token_tracker: TokenTracker, rate_limiter: Optional[TokenBucketRateLimiter] = None) -> Optional[Dict]:
+def analyze_with_llm(images: List[str], prompt: str, image_ids: List[str], token_tracker: TokenTracker, rate_limiter: Optional[AdaptiveRateLimiter] = None) -> Optional[Dict]:
     processed_images = []
     for img_path in images:
         pil_img = resize_image(img_path)
         processed_images.append(pil_img)
 
-    cached = _cache.get(prompt, images, MODEL_NAME)
+    cached = _cache.get(prompt, images, VISION_MODEL)
     if cached is not None:
         logger.debug(f"Cache hit for {len(images)} images")
         return cached
@@ -121,11 +121,11 @@ def analyze_with_llm(images: List[str], prompt: str, image_ids: List[str], token
         return None
 
     parsed = _parse_response(parsed)
-    _cache.set(prompt, images, MODEL_NAME, parsed)
+    _cache.set(prompt, images, VISION_MODEL, parsed)
     return parsed
 
 
-def run_vision_analysis(preprocessed: Dict, evidence_rule: Dict, token_tracker: TokenTracker, rate_limiter: Optional[TokenBucketRateLimiter] = None) -> Optional[Dict]:
+def run_vision_analysis(preprocessed: Dict, evidence_rule: Dict, token_tracker: TokenTracker, rate_limiter: Optional[AdaptiveRateLimiter] = None) -> Optional[Dict]:
     if not preprocessed['valid_image']:
         return None
 
@@ -155,12 +155,9 @@ FALLBACK_VISION_RESULT = {
 }
 
 
-def safe_run_vision_analysis(preprocessed: Dict, evidence_rule: Dict, token_tracker: TokenTracker, rate_limiter: Optional[TokenBucketRateLimiter] = None) -> Optional[Dict]:
+def safe_run_vision_analysis(preprocessed: Dict, evidence_rule: Dict, token_tracker: TokenTracker, rate_limiter: Optional[AdaptiveRateLimiter] = None) -> Optional[Dict]:
     if not preprocessed['valid_image']:
         return None
-
-    if rate_limiter:
-        rate_limiter.wait_if_needed()
 
     try:
         return run_vision_analysis(preprocessed, evidence_rule, token_tracker, rate_limiter)

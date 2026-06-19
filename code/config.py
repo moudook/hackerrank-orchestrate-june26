@@ -8,12 +8,12 @@ load_dotenv(_env_path)
 
 logger = logging.getLogger(__name__)
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-MODEL_NAME = os.getenv('MODEL_NAME', 'gemini-2.0-flash')
-LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'gemini')
-LLM_MODEL = os.getenv('LLM_MODEL', f'{LLM_PROVIDER}/{MODEL_NAME}')
+LLM_API_KEY = os.getenv('LLM_API_KEY', '')
+LLM_PROVIDER = os.getenv('LLM_PROVIDER', '')
+MODEL_NAME = os.getenv('MODEL_NAME', '')
+_derived = f'{LLM_PROVIDER}/{MODEL_NAME}' if LLM_PROVIDER and MODEL_NAME else ''
+LLM_MODEL = os.getenv('LLM_MODEL', _derived)
 VISION_MODEL = os.getenv('VISION_MODEL', LLM_MODEL)
-LLM_API_KEY = os.getenv('LLM_API_KEY', os.getenv('GEMINI_API_KEY', ''))
 LLM_FALLBACK_CHAIN = os.getenv('LLM_FALLBACK_CHAIN', '')
 MAX_IMAGES_PER_CALL = int(os.getenv('MAX_IMAGES_PER_CALL', '4'))
 RATE_LIMIT_RPM = int(os.getenv('RATE_LIMIT_RPM', '2000'))
@@ -22,6 +22,7 @@ CACHE_ENABLED = os.getenv('CACHE_ENABLED', 'true').lower() in ('true', '1', 'yes
 CACHE_DIR = os.getenv('CACHE_DIR', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.cache'))
 SAFEGUARD_ENABLED = os.getenv('SAFEGUARD_ENABLED', 'true').lower() in ('true', '1', 'yes')
 TEMP_DIR = os.getenv('TEMP_DIR', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.tmp'))
+MAX_WORKERS = int(os.getenv('MAX_WORKERS', '5'))
 
 ALLOWED_ISSUE_TYPES = ['dent', 'scratch', 'crack', 'glass_shatter', 'broken_part',
                        'missing_part', 'torn_packaging', 'crushed_packaging',
@@ -67,14 +68,30 @@ STRUCTURED_OUTPUT_SCHEMA = {
 }
 
 
+KNOWN_PROVIDER_KEYS = [
+    'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GROQ_API_KEY',
+    'OPENROUTER_API_KEY', 'TOGETHERAI_API_KEY', 'AZURE_API_KEY', 'REPLICATE_API_KEY',
+]
+
+
+def _any_api_key_set() -> bool:
+    if LLM_API_KEY and len(LLM_API_KEY) >= 10:
+        return True
+    for key in KNOWN_PROVIDER_KEYS:
+        val = os.getenv(key, '')
+        if val and len(val) >= 10:
+            return True
+    return False
+
+
 def validate_config() -> bool:
     errors = []
 
-    api_key = LLM_API_KEY or GEMINI_API_KEY
-    if not api_key:
-        errors.append("LLM_API_KEY (or GEMINI_API_KEY) is not set in .env file")
-    elif len(api_key) < 10:
-        errors.append(f"API key appears invalid (too short: {len(api_key)} chars)")
+    if not _any_api_key_set():
+        errors.append("No API key found. Set LLM_API_KEY or a provider-specific key (e.g. GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY) in .env")
+
+    if not LLM_MODEL:
+        errors.append("LLM_MODEL is not set. Set it in .env (e.g. LLM_MODEL=groq/qwen/qwen3.6-27b)")
 
     if MAX_IMAGES_PER_CALL < 1 or MAX_IMAGES_PER_CALL > 10:
         errors.append(f"MAX_IMAGES_PER_CALL={MAX_IMAGES_PER_CALL} is out of range (1-10)")

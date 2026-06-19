@@ -12,8 +12,12 @@ from pipeline.llm_router import (
     RateLimitError,
     _build_image_block,
     _build_text_block,
+    _clean_response_text,
     _extract_retry_after,
+    _find_json_object,
     _pil_to_base64,
+    _strip_think_tags,
+    _try_parse_json,
     extract_json,
     get_token_usage,
     llm_complete,
@@ -74,6 +78,92 @@ class TestExtractJSON:
         mock_response.choices = []
         result = extract_json(mock_response)
         assert result is None
+
+    def test_extract_think_tags_stripped(self):
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = '<think>Let me analyze this image...</think>{"key": "value"}'
+        result = extract_json(mock_response)
+        assert result == {"key": "value"}
+
+    def test_extract_json_embedded_in_text(self):
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = 'Here is my analysis: {"key": "value"} Hope that helps.'
+        result = extract_json(mock_response)
+        assert result == {"key": "value"}
+
+    def test_extract_json_multiple_objects(self):
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = '{"first": "object"} some text {"second": "object"}'
+        result = extract_json(mock_response)
+        # Should return the first valid object
+        assert result == {"first": "object"}
+
+    def test_extract_json_after_think_with_fence(self):
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = '<think>reasoning</think>```json\n{"key": "value"}\n```'
+        result = extract_json(mock_response)
+        assert result == {"key": "value"}
+
+    def test_extract_json_truncated(self):
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = '{"key": "value", "nested": {"inner": "val"'
+        result = extract_json(mock_response)
+        assert result is None  # truncated JSON should fail gracefully
+
+
+class TestResponseCleanup:
+    def test_clean_response_text_think_tags(self):
+        assert _clean_response_text('<think>foo</think>{"a": 1}') == '{"a": 1}'
+
+    def test_clean_response_text_markdown_fence(self):
+        assert _clean_response_text('```json\n{"a": 1}\n```') == '{"a": 1}'
+
+    def test_clean_response_text_noop(self):
+        assert _clean_response_text('{"a": 1}') == '{"a": 1}'
+
+    def test_clean_response_text_empty(self):
+        assert _clean_response_text('') == ''
+
+    def test_find_json_object_simple(self):
+        assert _find_json_object('{"a": 1}') == {"a": 1}
+
+    def test_find_json_object_embedded(self):
+        assert _find_json_object('text {"a": 1} more') == {"a": 1}
+
+    def test_find_json_object_nested(self):
+        assert _find_json_object('{"a": {"b": 2}}') == {"a": {"b": 2}}
+
+    def test_find_json_object_first_of_many(self):
+        assert _find_json_object('{"a": 1} junk {"b": 2}') == {"a": 1}
+
+    def test_find_json_object_invalid(self):
+        assert _find_json_object('no json here') is None
+
+    def test_try_parse_json_valid(self):
+        assert _try_parse_json('{"a": 1}') == {"a": 1}
+
+    def test_try_parse_json_invalid(self):
+        assert _try_parse_json('not json') is None
+
+    def test_try_parse_json_array(self):
+        assert _try_parse_json('[{"a": 1}, {"b": 2}]') == {"a": 1}
+
+    def test_try_parse_json_non_dict(self):
+        assert _try_parse_json('[1, 2, 3]') is None
+
+    def test_strip_think_tags_simple(self):
+        assert _strip_think_tags('<think>foo</think>bar') == 'bar'
+
+    def test_strip_think_tags_multiple(self):
+        assert _strip_think_tags('<think>a</think><think>b</think>c') == 'c'
+
+    def test_strip_think_tags_no_tags(self):
+        assert _strip_think_tags('hello') == 'hello'
 
 
 class TestGetTokenUsage:
