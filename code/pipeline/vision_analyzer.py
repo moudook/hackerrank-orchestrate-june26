@@ -2,20 +2,13 @@ import json
 import os
 import logging
 from pathlib import Path
-from google import genai
-from google.genai import errors, types
-from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception
 
-from config import GEMINI_API_KEY, MODEL_NAME, STRUCTURED_OUTPUT_SCHEMA, CACHE_ENABLED, CACHE_DIR
+from config import STRUCTURED_OUTPUT_SCHEMA, CACHE_ENABLED, CACHE_DIR, MODEL_NAME
 from utils.image_utils import resize_image
 from utils.cache import ResponseCache
+from pipeline.llm_router import llm_complete, extract_json, get_token_usage, ConfigurationError
 
 logger = logging.getLogger(__name__)
-
-client = genai.Client(
-    api_key=GEMINI_API_KEY,
-    http_options=types.HttpOptions(timeout=180_000)
-)
 
 _cache = ResponseCache(CACHE_DIR, enabled=CACHE_ENABLED)
 
@@ -52,18 +45,26 @@ def _estimate_tokens(prompt, num_images):
     return text_tokens + image_tokens
 
 
-def _is_retryable(exception):
-    if isinstance(exception, errors.APIError):
-        return exception.code != 429
-    return True
+def _parse_response(parsed):
+    if 'confidence' in parsed and isinstance(parsed['confidence'], str):
+        try:
+            parsed['confidence'] = float(parsed['confidence'])
+        except ValueError:
+            parsed['confidence'] = 0.0
+
+    if 'supporting_image_ids' in parsed and isinstance(parsed['supporting_image_ids'], list):
+        parsed['supporting_image_ids'] = ';'.join(parsed['supporting_image_ids'])
+
+    if 'risk_flags' in parsed and isinstance(parsed['risk_flags'], list):
+        parsed['risk_flags'] = ';'.join(parsed['risk_flags']) if parsed['risk_flags'] else 'none'
+
+    if 'image_quality_issues' in parsed and isinstance(parsed['image_quality_issues'], list):
+        parsed['image_quality_issues'] = ';'.join(parsed['image_quality_issues']) if parsed['image_quality_issues'] else 'none'
+
+    return parsed
 
 
-@retry(
-    wait=wait_exponential(multiplier=2, min=4, max=60),
-    stop=stop_after_attempt(5),
-    retry=retry_if_exception(_is_retryable)
-)
-def analyze_with_gemini(images, prompt, image_ids, token_tracker):
+def analyze_with_llm(images, prompt, image_ids, token_tracker):
     processed_images = []
     for img_path in images:
         pil_img = resize_image(img_path)
@@ -84,46 +85,39 @@ def analyze_with_gemini(images, prompt, image_ids, token_tracker):
         contents.append(pil_img)
     contents.append(prompt)
 
-    generation_config = types.GenerateContentConfig(
+    messages = []
+    if SYSTEM_PROMPT:
+        messages.append({"role": "system", "content": SYSTEM_PROMPT})
+    content_blocks = []
+    for item in contents:
+        if isinstance(item, str):
+            content_blocks.append({"type": "text", "text": item})
+        else:
+            import io, base64
+            buf = io.BytesIO()
+            item.save(buf, format='JPEG', quality=85)
+            b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+            content_blocks.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+            })
+    messages.append({"role": "user", "content": content_blocks})
+
+    response = llm_complete(
+        messages=messages,
+        response_schema=STRUCTURED_OUTPUT_SCHEMA,
         temperature=0.0,
-        top_p=0.95,
-        response_mime_type='application/json',
-        response_json_schema=STRUCTURED_OUTPUT_SCHEMA,
-        system_instruction=SYSTEM_PROMPT if SYSTEM_PROMPT else None,
     )
 
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=contents,
-        config=generation_config,
-    )
+    usage = get_token_usage(response)
+    token_tracker.add_output(usage['output_tokens'])
 
-    output_tokens = int(len(response.text.split()) * 1.3)
-    token_tracker.add_output(output_tokens)
-
-    try:
-        parsed = json.loads(response.text)
-    except (json.JSONDecodeError, ValueError) as e:
-        logger.error(f"Failed to parse structured response: {e}")
+    parsed = extract_json(response)
+    if parsed is None:
         return None
 
-    if 'confidence' in parsed and isinstance(parsed['confidence'], str):
-        try:
-            parsed['confidence'] = float(parsed['confidence'])
-        except ValueError:
-            parsed['confidence'] = 0.0
-
-    if 'supporting_image_ids' in parsed and isinstance(parsed['supporting_image_ids'], list):
-        parsed['supporting_image_ids'] = ';'.join(parsed['supporting_image_ids'])
-
-    if 'risk_flags' in parsed and isinstance(parsed['risk_flags'], list):
-        parsed['risk_flags'] = ';'.join(parsed['risk_flags']) if parsed['risk_flags'] else 'none'
-
-    if 'image_quality_issues' in parsed and isinstance(parsed['image_quality_issues'], list):
-        parsed['image_quality_issues'] = ';'.join(parsed['image_quality_issues']) if parsed['image_quality_issues'] else 'none'
-
+    parsed = _parse_response(parsed)
     _cache.set(prompt, images, MODEL_NAME, parsed)
-
     return parsed
 
 
@@ -138,8 +132,8 @@ def run_vision_analysis(preprocessed, evidence_rule, token_tracker):
         preprocessed['image_ids']
     )
 
-    logger.info(f"Sending {len(preprocessed['image_paths'])} images to Gemini for user {preprocessed['user_id']}")
-    return analyze_with_gemini(preprocessed['image_paths'], prompt, preprocessed['image_ids'], token_tracker)
+    logger.info(f"Sending {len(preprocessed['image_paths'])} images for analysis for user {preprocessed['user_id']}")
+    return analyze_with_llm(preprocessed['image_paths'], prompt, preprocessed['image_ids'], token_tracker)
 
 
 FALLBACK_VISION_RESULT = {
@@ -166,6 +160,9 @@ def safe_run_vision_analysis(preprocessed, evidence_rule, token_tracker, rate_li
 
     try:
         return run_vision_analysis(preprocessed, evidence_rule, token_tracker)
+    except ConfigurationError as e:
+        logger.error(f"Configuration error: {e}")
+        return dict(FALLBACK_VISION_RESULT)
     except Exception as e:
         logger.error(f"Vision analysis failed for user {preprocessed['user_id']}: {e}")
         return dict(FALLBACK_VISION_RESULT)

@@ -10,6 +10,10 @@ logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 MODEL_NAME = os.getenv('MODEL_NAME', 'gemini-2.0-flash')
+LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'gemini')
+LLM_MODEL = os.getenv('LLM_MODEL', f'{LLM_PROVIDER}/{MODEL_NAME}')
+VISION_MODEL = os.getenv('VISION_MODEL', LLM_MODEL)
+LLM_API_KEY = os.getenv('LLM_API_KEY', os.getenv('GEMINI_API_KEY', ''))
 MAX_IMAGES_PER_CALL = int(os.getenv('MAX_IMAGES_PER_CALL', '4'))
 RATE_LIMIT_RPM = int(os.getenv('RATE_LIMIT_RPM', '2000'))
 RATE_LIMIT_TPM = int(os.getenv('RATE_LIMIT_TPM', '4000000'))
@@ -65,10 +69,11 @@ STRUCTURED_OUTPUT_SCHEMA = {
 def validate_config():
     errors = []
 
-    if not GEMINI_API_KEY:
-        errors.append("GEMINI_API_KEY is not set in .env file")
-    elif len(GEMINI_API_KEY) < 10:
-        errors.append(f"GEMINI_API_KEY appears invalid (too short: {len(GEMINI_API_KEY)} chars)")
+    api_key = LLM_API_KEY or GEMINI_API_KEY
+    if not api_key:
+        errors.append("LLM_API_KEY (or GEMINI_API_KEY) is not set in .env file")
+    elif len(api_key) < 10:
+        errors.append(f"API key appears invalid (too short: {len(api_key)} chars)")
 
     if MAX_IMAGES_PER_CALL < 1 or MAX_IMAGES_PER_CALL > 10:
         errors.append(f"MAX_IMAGES_PER_CALL={MAX_IMAGES_PER_CALL} is out of range (1-10)")
