@@ -17,6 +17,7 @@ from pipeline.evidence_filter import get_relevant_rule  # noqa: E402
 from pipeline.loader import load_all  # noqa: E402
 from pipeline.postprocessor import apply_claim_decision  # noqa: E402
 from pipeline.preprocessor import preprocess_claim  # noqa: E402
+from pipeline.safety_gate import evaluate_safety_gate  # noqa: E402
 from pipeline.validator import validate_output  # noqa: E402
 from pipeline.vision_analyzer import safe_run_vision_analysis  # noqa: E402
 from utils.checkpoint import CheckpointManager  # noqa: E402
@@ -63,10 +64,25 @@ def process_single_claim(idx, row, user_history, evidence, token_tracker, rate_l
     preprocessed = preprocess_claim(row, user_history)
     evidence_rule = get_relevant_rule(preprocessed['claim_object'], preprocessed['user_claim'], evidence)
 
+    gate_result = evaluate_safety_gate(preprocessed)
+    if gate_result and gate_result.get('blocked'):
+        decision = apply_claim_decision(
+            preprocessed, None, evidence_rule,
+            override_risk_flags=gate_result['risk_flags'],
+            override_justification=gate_result['reason']
+        )
+        validated = validate_output(decision)
+        return validated
+
     estimated_tokens = 1000 + len(preprocessed['image_paths']) * 258
     rate_limiter.acquire(estimated_tokens)
 
     vision_result = safe_run_vision_analysis(preprocessed, evidence_rule, token_tracker, rate_limiter)
+    if gate_result:
+        if vision_result:
+            existing = vision_result.get('risk_flags', 'none')
+            combined = f"{existing};{gate_result['risk_flags']}" if existing != 'none' else gate_result['risk_flags']
+            vision_result['risk_flags'] = combined
     decision = apply_claim_decision(preprocessed, vision_result, evidence_rule)
     validated = validate_output(decision)
 
