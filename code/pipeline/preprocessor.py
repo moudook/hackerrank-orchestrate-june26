@@ -1,9 +1,12 @@
 import logging
 import os
+import random
 from urllib.parse import unquote
 
 import pandas as pd
 from PIL import Image
+
+random.seed(42)
 
 logger = logging.getLogger(__name__)
 

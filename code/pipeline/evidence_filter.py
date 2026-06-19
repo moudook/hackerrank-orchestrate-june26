@@ -1,4 +1,7 @@
 import logging
+import random
+
+random.seed(42)
 
 logger = logging.getLogger(__name__)
 

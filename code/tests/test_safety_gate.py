@@ -1,13 +1,13 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-import pytest
 
 from pipeline.safety_gate import (
-    evaluate_safety_gate,
-    _check_text_risk,
     _check_history_risk,
+    _check_text_risk,
+    evaluate_safety_gate,
 )
 
 
