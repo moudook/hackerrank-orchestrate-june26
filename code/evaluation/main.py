@@ -16,6 +16,7 @@ from pipeline.evidence_filter import get_relevant_rule  # noqa: E402
 from pipeline.loader import load_all, load_sample_claims  # noqa: E402
 from pipeline.postprocessor import apply_claim_decision  # noqa: E402
 from pipeline.preprocessor import preprocess_claim  # noqa: E402
+from pipeline.safety_gate import evaluate_safety_gate  # noqa: E402
 from pipeline.validator import validate_output  # noqa: E402
 from pipeline.vision_analyzer import safe_run_vision_analysis  # noqa: E402
 from utils.cache import ResponseCache  # noqa: E402
@@ -82,10 +83,25 @@ def run_optimized_strategy(sample, user_history, evidence):
 
         evidence_rule = get_relevant_rule(preprocessed['claim_object'], preprocessed['user_claim'], evidence)
 
+        gate_result = evaluate_safety_gate(preprocessed)
+        if gate_result and gate_result.get('blocked'):
+            decision = apply_claim_decision(
+                preprocessed, None, evidence_rule,
+                override_risk_flags=gate_result['risk_flags'],
+                override_justification=gate_result['reason']
+            )
+            validated = validate_output(decision)
+            return validated, num_images
+
         estimated_tokens = 1000 + num_images * 258
         rate_limiter.acquire(estimated_tokens)
 
         vision_result = safe_run_vision_analysis(preprocessed, evidence_rule, token_tracker, rate_limiter)
+        if gate_result:
+            if vision_result:
+                existing = vision_result.get('risk_flags', 'none')
+                combined = f"{existing};{gate_result['risk_flags']}" if existing != 'none' else gate_result['risk_flags']
+                vision_result['risk_flags'] = combined
         decision = apply_claim_decision(preprocessed, vision_result, evidence_rule)
         validated = validate_output(decision)
 
@@ -106,6 +122,14 @@ def run_optimized_strategy(sample, user_history, evidence):
     avg_latency = round(elapsed / total, 1) if total else 0.0
 
     detailed['claim_status']
+    safety_gate_stats = {'blocked': 0, 'flagged': 0}
+    for r in results:
+        j = r.get('claim_status_justification', '').lower()
+        if 'safety gate blocked' in j:
+            safety_gate_stats['blocked'] += 1
+        elif 'manual review suggested' in j:
+            safety_gate_stats['flagged'] += 1
+
     op_info = {
         'model_calls': summary['total_calls'],
         'input_tokens': summary['input_tokens'],
@@ -117,6 +141,8 @@ def run_optimized_strategy(sample, user_history, evidence):
         'peak_rpm': summary['total_calls'],
         'cache_hits': cache._hits if hasattr(cache, '_hits') else 0,
         'cache_misses': cache._misses if hasattr(cache, '_misses') else 0,
+        'safety_blocked': safety_gate_stats['blocked'],
+        'safety_flagged': safety_gate_stats['flagged'],
     }
 
     return metrics, detailed, op_info
@@ -131,6 +157,10 @@ def run_evaluation(claims_path=None, output_path=None, report_path=None):
 
     opt_metrics, opt_detailed, op_info = run_optimized_strategy(sample, user_history, evidence)
     logger.info("Optimized complete")
+
+    safety_blocked = op_info.get('safety_blocked', 0)
+    safety_flagged = op_info.get('safety_flagged', 0)
+    logger.info(f"Safety gate: {safety_blocked} blocked, {safety_flagged} flagged")
 
     _write_report(opt_metrics, opt_detailed, op_info, baseline_metrics, sample, report_path)
     return baseline_metrics, opt_metrics, opt_detailed, op_info
@@ -175,6 +205,8 @@ def _write_report(opt_metrics, opt_detailed, op_info, baseline_metrics, sample, 
         'peak_rpm': op_info['peak_rpm'],
         'rate_limit_rpm': RATE_LIMIT_RPM,
         'rate_limit_tpm': RATE_LIMIT_TPM,
+        'safety_blocked': op_info['safety_blocked'],
+        'safety_flagged': op_info['safety_flagged'],
         'cache_dir': str(CACHE_DIR) if CACHE_DIR else 'disabled',
         'cache_hit_rate': round(op_info['cache_hits'] / (op_info['cache_hits'] + op_info['cache_misses']) * 100, 1)
             if (op_info['cache_hits'] + op_info['cache_misses']) > 0 else 0,
@@ -204,6 +236,8 @@ def _write_report(opt_metrics, opt_detailed, op_info, baseline_metrics, sample, 
     print(f"    issue_type: {opt_metrics['issue_type']['accuracy']}%")
     print(f"    object_part: {opt_metrics['object_part']['accuracy']}%")
     print(f"  Model calls: {op_info['model_calls']}")
+    print(f"  Safety gate blocked: {op_info['safety_blocked']}")
+    print(f"  Safety gate flagged: {op_info['safety_flagged']}")
     print(f"  Cost: {op_info['cost']}")
 
 

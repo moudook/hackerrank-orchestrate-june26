@@ -9,8 +9,10 @@ import pytest
 from PIL import Image
 from pipeline.llm_router import (
     ConfigurationError,
+    RateLimitError,
     _build_image_block,
     _build_text_block,
+    _extract_retry_after,
     _pil_to_base64,
     extract_json,
     get_token_usage,
@@ -137,6 +139,25 @@ class TestLLMCompleteWithFallback:
                     model="gemini/gemini-2.0-flash",
                 )
         assert mock_completion.call_count >= 1
+
+    def test_extract_retry_after_str_direct(self):
+        e = Exception('retryDelay: "53.686s"')
+        d = _extract_retry_after(e)
+        assert abs(d - 53.686) < 0.01
+
+    def test_extract_retry_after_no_match(self):
+        e = Exception('no delay here')
+        d = _extract_retry_after(e)
+        assert d == 0.0
+
+    def test_rate_limit_error_has_retry_after(self):
+        err = RateLimitError("rate limited", retry_after=30.5)
+        assert err.retry_after == 30.5
+        assert "rate limited" in str(err)
+
+    def test_rate_limit_error_default_retry_after(self):
+        err = RateLimitError("rate limited")
+        assert err.retry_after == 0.0
 
     @patch('pipeline.llm_router.litellm.completion')
     def test_no_fallback_and_all_fail(self, mock_completion):

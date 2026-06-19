@@ -47,6 +47,8 @@
 - Estimated cost: [cost]
 - Peak TPM: [peak_tpm]
 - Peak RPM: [peak_rpm]
+- Safety gate blocked: [safety_blocked]
+- Safety gate flagged: [safety_flagged]
 
 ## Rate Limiting Strategy
 - Token bucket algorithm with RPM=[rate_limit_rpm] and TPM=[rate_limit_tpm]
@@ -65,3 +67,4 @@
 - Token estimation uses heuristic (words * 1.3) rather than actual API counting
 - Multi-language support covers Hindi/Spanish/Chinese but not all languages
 - Manipulation detection uses VLM judgment, not dedicated forensics tools
+- Pre-VLM safety gate cuts processing before any API cost for high-risk claims

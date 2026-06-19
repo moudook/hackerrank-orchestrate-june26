@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import litellm
@@ -20,6 +21,13 @@ FALLBACK_CHAIN = os.getenv('LLM_FALLBACK_CHAIN', '')
 
 class ConfigurationError(Exception):
     pass
+
+
+class RateLimitError(Exception):
+    def __init__(self, message: str, retry_after: float = 0.0):
+        super().__init__(message)
+        self.retry_after = retry_after
+        self.message = message
 
 
 def _pil_to_base64(pil_image: Image.Image, fmt: str = 'JPEG') -> str:
@@ -57,19 +65,50 @@ def _build_messages(contents: List[Union[str, Image.Image]], system_prompt: Opti
     return messages
 
 
+def _extract_retry_after(error: BaseException) -> float:
+    msg = str(error)
+    try:
+        m = re.search(r'(?:retryAfter|retryDelay)["\']?\s*:\s*["\']?(\d+(?:\.\d+)?)s', msg)
+        if m:
+            return float(m.group(1))
+        data = json.loads(msg)
+        details = data.get('error', {}).get('details', [])
+        for d in details:
+            if d.get('@type', '').endswith('RetryInfo'):
+                rd = d.get('retryDelay', '0s')
+                m2 = re.search(r'(\d+(?:\.\d+)?)s', rd)
+                if m2:
+                    return float(m2.group(1))
+    except (json.JSONDecodeError, AttributeError, KeyError, ValueError):
+        pass
+    return 0.0
+
+
 def _is_retryable(exception: BaseException) -> bool:
     if isinstance(exception, ConfigurationError):
         return False
+    if isinstance(exception, RateLimitError):
+        return True
     try:
         status = getattr(exception, 'status_code', 0) or getattr(exception, 'code', 0)
-        return status not in (429, 401, 403)
+        if status == 429:
+            return True
+        return status not in (401, 403)
     except Exception:
         return True
 
 
+def _wrap_exception(e: Exception) -> Exception:
+    msg = str(e)
+    if '429' in msg or 'rate_limit' in msg.lower() or 'quota' in msg.lower() or 'resource_exhausted' in msg.lower():
+        retry_after = _extract_retry_after(e)
+        return RateLimitError(msg, retry_after)
+    return e
+
+
 @retry(
-    wait=wait_exponential(multiplier=2, min=4, max=60),
-    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=4, max=120),
+    stop=stop_after_attempt(6),
     retry=retry_if_exception(_is_retryable)
 )
 def _build_completion_kwargs(messages: List[Dict[str, Any]], model: str, response_schema: Optional[Dict[str, Any]], temperature: float, timeout: int, api_key: Optional[str] = None) -> Tuple[Dict[str, Any], str]:
@@ -105,21 +144,41 @@ def _build_completion_kwargs(messages: List[Dict[str, Any]], model: str, respons
     return kwargs, provider
 
 
-def _try_single_call(messages: List[Dict[str, Any]], model: str, response_schema: Optional[Dict[str, Any]], temperature: float, timeout: int, api_key: Optional[str] = None) -> Any:
+def _try_single_call(messages: List[Dict[str, Any]], model: str, response_schema: Optional[Dict[str, Any]], temperature: float, timeout: int, api_key: Optional[str] = None, rate_limiter=None) -> Any:
     kwargs, provider = _build_completion_kwargs(
         messages, model, response_schema, temperature, timeout, api_key
     )
     try:
-        return litellm.completion(**kwargs)
-    except Exception:
-        logger.warning(f"Provider {provider} with {model} failed, retrying without schema")
+        if rate_limiter:
+            rate_limiter.wait_for_cooldown()
+        result = litellm.completion(**kwargs)
+        if rate_limiter:
+            rate_limiter.note_success()
+        return result
+    except Exception as e:
+        wrapped = _wrap_exception(e)
+        if rate_limiter and isinstance(wrapped, RateLimitError):
+            rate_limiter.note_429(str(wrapped))
+            if wrapped.retry_after > 0:
+                import time
+                time.sleep(min(wrapped.retry_after + 1, 120))
+        logger.warning(f"Provider {provider} with {model} failed ({type(wrapped).__name__}), retrying without schema")
         kwargs.pop("api_key", None)
         kwargs.pop("extra_body", None)
         kwargs.pop("response_format", None)
-        return litellm.completion(**kwargs)
+        try:
+            result = litellm.completion(**kwargs)
+            if rate_limiter:
+                rate_limiter.note_success()
+            return result
+        except Exception as e2:
+            wrapped2 = _wrap_exception(e2)
+            if rate_limiter and isinstance(wrapped2, RateLimitError):
+                rate_limiter.note_429(str(wrapped2))
+            raise wrapped2
 
 
-def llm_complete(messages: List[Dict[str, Any]], model: Optional[str] = None, api_key: Optional[str] = None, response_schema: Optional[Dict[str, Any]] = None, temperature: float = 0.0, timeout: int = 180) -> Any:
+def llm_complete(messages: List[Dict[str, Any]], model: Optional[str] = None, api_key: Optional[str] = None, response_schema: Optional[Dict[str, Any]] = None, temperature: float = 0.0, timeout: int = 180, rate_limiter=None) -> Any:
     litellm.set_verbose = False
 
     model = model or VISION_MODEL
@@ -130,10 +189,10 @@ def llm_complete(messages: List[Dict[str, Any]], model: Optional[str] = None, ap
             "No LLM API key found. Set LLM_API_KEY (or GEMINI_API_KEY) in .env"
         )
 
-    return _try_single_call(messages, model, response_schema, temperature, timeout, api_key)
+    return _try_single_call(messages, model, response_schema, temperature, timeout, api_key, rate_limiter)
 
 
-def llm_complete_with_fallback(messages: List[Dict[str, Any]], model: Optional[str] = None, response_schema: Optional[Dict[str, Any]] = None, temperature: float = 0.0, timeout: int = 180) -> Any:
+def llm_complete_with_fallback(messages: List[Dict[str, Any]], model: Optional[str] = None, response_schema: Optional[Dict[str, Any]] = None, temperature: float = 0.0, timeout: int = 180, rate_limiter=None) -> Any:
     litellm.set_verbose = False
 
     model = model or VISION_MODEL
@@ -149,7 +208,7 @@ def llm_complete_with_fallback(messages: List[Dict[str, Any]], model: Optional[s
             logger.info(f"Attempting LLM call with model: {attempt_model}")
             return _try_single_call(
                 messages, attempt_model, response_schema, temperature,
-                timeout, api_key=None
+                timeout, api_key=None, rate_limiter=rate_limiter
             )
         except ConfigurationError:
             raise

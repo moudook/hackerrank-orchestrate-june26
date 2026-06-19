@@ -66,7 +66,7 @@ def _parse_response(parsed: Dict) -> Dict:
     return parsed
 
 
-def analyze_with_llm(images: List[str], prompt: str, image_ids: List[str], token_tracker: TokenTracker) -> Optional[Dict]:
+def analyze_with_llm(images: List[str], prompt: str, image_ids: List[str], token_tracker: TokenTracker, rate_limiter: Optional[TokenBucketRateLimiter] = None) -> Optional[Dict]:
     processed_images = []
     for img_path in images:
         pil_img = resize_image(img_path)
@@ -110,6 +110,7 @@ def analyze_with_llm(images: List[str], prompt: str, image_ids: List[str], token
         messages=messages,
         response_schema=STRUCTURED_OUTPUT_SCHEMA,
         temperature=0.0,
+        rate_limiter=rate_limiter,
     )
 
     usage = get_token_usage(response)
@@ -124,7 +125,7 @@ def analyze_with_llm(images: List[str], prompt: str, image_ids: List[str], token
     return parsed
 
 
-def run_vision_analysis(preprocessed: Dict, evidence_rule: Dict, token_tracker: TokenTracker) -> Optional[Dict]:
+def run_vision_analysis(preprocessed: Dict, evidence_rule: Dict, token_tracker: TokenTracker, rate_limiter: Optional[TokenBucketRateLimiter] = None) -> Optional[Dict]:
     if not preprocessed['valid_image']:
         return None
 
@@ -136,7 +137,7 @@ def run_vision_analysis(preprocessed: Dict, evidence_rule: Dict, token_tracker: 
     )
 
     logger.info(f"Sending {len(preprocessed['image_paths'])} images for analysis for user {preprocessed['user_id']}")
-    return analyze_with_llm(preprocessed['image_paths'], prompt, preprocessed['image_ids'], token_tracker)
+    return analyze_with_llm(preprocessed['image_paths'], prompt, preprocessed['image_ids'], token_tracker, rate_limiter)
 
 
 FALLBACK_VISION_RESULT = {
@@ -162,7 +163,7 @@ def safe_run_vision_analysis(preprocessed: Dict, evidence_rule: Dict, token_trac
         rate_limiter.wait_if_needed()
 
     try:
-        return run_vision_analysis(preprocessed, evidence_rule, token_tracker)
+        return run_vision_analysis(preprocessed, evidence_rule, token_tracker, rate_limiter)
     except ConfigurationError as e:
         logger.error(f"Configuration error: {e}")
         return dict(FALLBACK_VISION_RESULT)
