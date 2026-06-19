@@ -121,12 +121,9 @@ def run_optimized_strategy(sample, user_history, evidence):
     return metrics, detailed, op_info
 
 
-def main():
+def run_evaluation(claims_path=None, output_path=None, report_path=None):
     claims, user_history, evidence = load_all()
-    sample = load_sample_claims()
-    logger.info(f"Loaded {len(sample)} sample claims for evaluation")
-
-    run_baseline_strategy(sample, user_history, evidence)
+    sample = load_sample_claims(claims_path) if claims_path else load_sample_claims()
 
     baseline_metrics, _ = run_baseline_strategy(sample, user_history, evidence)
     logger.info("Baseline complete")
@@ -134,9 +131,15 @@ def main():
     opt_metrics, opt_detailed, op_info = run_optimized_strategy(sample, user_history, evidence)
     logger.info("Optimized complete")
 
-    total = len(sample)
+    _write_report(opt_metrics, opt_detailed, op_info, baseline_metrics, sample, report_path)
+    return baseline_metrics, opt_metrics, opt_detailed, op_info
 
+
+def _write_report(opt_metrics, opt_detailed, op_info, baseline_metrics, sample, report_path=None):
+    total = len(sample)
     cs_metrics = opt_detailed['claim_status']
+    report_path = report_path or REPORT_OUTPUT_PATH
+
     report_vars = {
         'model': MODEL_NAME,
         'n': total,
@@ -184,10 +187,10 @@ def main():
         placeholder = f'[{key}]'
         report = report.replace(placeholder, str(val))
 
-    with open(REPORT_OUTPUT_PATH, 'w') as f:
+    with open(report_path, 'w') as f:
         f.write(report)
 
-    logger.info(f"Evaluation report written to {REPORT_OUTPUT_PATH}")
+    logger.info(f"Evaluation report written to {report_path}")
 
     print("\n=== Evaluation Results ===")
     print(f"  Sample claims: {total}")
@@ -201,6 +204,11 @@ def main():
     print(f"    object_part: {opt_metrics['object_part']['accuracy']}%")
     print(f"  Model calls: {op_info['model_calls']}")
     print(f"  Cost: {op_info['cost']}")
+
+
+def main():
+    claims, user_history, evidence = load_all()
+    sample = load_sample_claims()
 
 
 if __name__ == '__main__':
