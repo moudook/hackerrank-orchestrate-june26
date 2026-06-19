@@ -67,7 +67,7 @@ STRUCTURED_OUTPUT_SCHEMA = {
 }
 
 
-def validate_config():
+def validate_config() -> bool:
     errors = []
 
     api_key = LLM_API_KEY or GEMINI_API_KEY

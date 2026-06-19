@@ -1,6 +1,7 @@
 import logging
 import os
 import random
+from typing import Dict, Optional
 from urllib.parse import unquote
 
 import pandas as pd
@@ -14,7 +15,7 @@ MIN_IMAGE_DIMENSION = 100
 MAX_IMAGE_SIZE_MB = 20
 
 
-def _normalize_path(raw_path):
+def _normalize_path(raw_path: str) -> str:
     raw_path = raw_path.strip()
     raw_path = unquote(raw_path)
     normalized = raw_path.replace('\\', '/')
@@ -22,7 +23,7 @@ def _normalize_path(raw_path):
     return normalized
 
 
-def _resolve_image_path(normalized_path):
+def _resolve_image_path(normalized_path: str) -> Optional[str]:
     base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'dataset')
     path_attempts = [
         os.path.join(base_dir, normalized_path),
@@ -40,7 +41,7 @@ def _resolve_image_path(normalized_path):
     return None
 
 
-def _is_valid_image(filepath):
+def _is_valid_image(filepath: str) -> bool:
     try:
         if os.path.getsize(filepath) == 0:
             logger.warning(f"Zero-byte image: {filepath}")
@@ -67,13 +68,13 @@ def _is_valid_image(filepath):
         return False
 
 
-def _extract_image_id(path):
+def _extract_image_id(path: str) -> str:
     basename = os.path.basename(path)
     name, _ = os.path.splitext(basename)
     return name.lower()
 
 
-def preprocess_claim(row, user_history_df):
+def preprocess_claim(row: pd.Series, user_history_df: pd.DataFrame) -> Dict:
     raw_paths = row.get('image_paths')
     user_claim = row.get('user_claim', '')
     if pd.isna(user_claim):

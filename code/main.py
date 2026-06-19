@@ -3,6 +3,7 @@ import concurrent.futures
 import logging
 import os
 import sys
+from typing import Any, Dict, Optional
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -34,9 +35,10 @@ OUTPUT_COLUMNS = [
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 OUTPUT_PATH = os.path.join(REPO_ROOT, 'output.csv')
 CHECKPOINT_PATH = os.path.join(REPO_ROOT, '.checkpoint.json')
+DRY_RUN = False
 
 
-def build_output_row(row, preprocessed, decision=None):
+def build_output_row(row: pd.Series, preprocessed: Dict[str, Any], decision: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     if decision:
         return decision
     return {
@@ -57,7 +59,7 @@ def build_output_row(row, preprocessed, decision=None):
     }
 
 
-def process_single_claim(idx, row, user_history, evidence, token_tracker, rate_limiter):
+def process_single_claim(idx: int, row: pd.Series, user_history: pd.DataFrame, evidence: pd.DataFrame, token_tracker: TokenTracker, rate_limiter: TokenBucketRateLimiter) -> Dict[str, Any]:
     user_id = row['user_id']
     logger.info(f"[{idx+1}] Processing user={user_id}, object={row['claim_object']}")
 
@@ -118,6 +120,17 @@ def main():
     logger.info(f"Checkpoint: {len(all_results)} cached, {len(remaining_indices)} remaining")
 
     if remaining_indices:
+        if DRY_RUN:
+            logger.info("Dry-run: processing claims through preprocessor + safety gate only")
+            for idx, row in remaining_indices:
+                pre = preprocess_claim(row, user_history)
+                gate = evaluate_safety_gate(pre)
+                flagged = 'BLOCKED' if gate and gate.get('blocked') else 'FLAGGED' if gate else 'PASS'
+                logger.info(f"  [{idx+1}] {row['user_id']}: {flagged}")
+            print(f"\nDry-run complete: {len(remaining_indices)} claims checked, "
+                  f"{sum(1 for _, r in remaining_indices if evaluate_safety_gate(preprocess_claim(r, user_history)) and evaluate_safety_gate(preprocess_claim(r, user_history)).get('blocked'))} blocked by safety gate")
+            return
+
         def worker(item):
             idx, row = item
             result = process_single_claim(idx + 1, row, user_history, evidence, token_tracker, rate_limiter)
@@ -145,7 +158,6 @@ def main():
 
     summary = token_tracker.summary()
     rl_stats = rate_limiter.stats()
-    len([r for r in all_results if r[1].get('claim_status_justification', '').startswith('Claim status')])
     print("\n=== Pipeline Summary ===")
     print(f"  Claims processed: {len(final_results)}")
     print(f"  New API calls: {summary['total_calls']}")
@@ -178,6 +190,8 @@ Examples:
                         help='Override Gemini model name')
     parser.add_argument('--output', type=str, default=None,
                         help='Override output CSV path')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Load and validate data, run preprocessor + safety gate, skip VLM calls')
     args = parser.parse_args()
 
     if args.verbose:
@@ -193,6 +207,11 @@ Examples:
     if args.output:
         global OUTPUT_PATH
         OUTPUT_PATH = args.output
+
+    if args.dry_run:
+        global DRY_RUN
+        DRY_RUN = True
+        logger.info("Dry-run mode: data will be loaded and preprocessed, VLM calls skipped")
 
     if args.reset_checkpoint:
         from utils.checkpoint import CheckpointManager

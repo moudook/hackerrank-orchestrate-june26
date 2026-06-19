@@ -1,9 +1,12 @@
 import logging
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from config import CACHE_DIR, CACHE_ENABLED, MODEL_NAME, STRUCTURED_OUTPUT_SCHEMA
 from utils.cache import ResponseCache
 from utils.image_utils import resize_image
+from utils.rate_limiter import TokenBucketRateLimiter
+from utils.token_tracker import TokenTracker
 
 from pipeline.llm_router import ConfigurationError, extract_json, get_token_usage, llm_complete_with_fallback
 
@@ -17,7 +20,7 @@ SYSTEM_PROMPT_PATH = Path(__file__).resolve().parent.parent / 'prompts' / 'syste
 SYSTEM_PROMPT = SYSTEM_PROMPT_PATH.read_text(encoding='utf-8') if SYSTEM_PROMPT_PATH.exists() else ''
 
 
-def _build_prompt(claim_object, user_claim, minimum_evidence, image_ids):
+def _build_prompt(claim_object: str, user_claim: str, minimum_evidence: str, image_ids: List[str]) -> str:
     image_section = '\n'.join([f'Image {i+1}: {img_id}' for i, img_id in enumerate(image_ids)])
     return (
         f"Object type: {claim_object}\n"
@@ -38,13 +41,13 @@ def _build_prompt(claim_object, user_claim, minimum_evidence, image_ids):
     )
 
 
-def _estimate_tokens(prompt, num_images):
+def _estimate_tokens(prompt: str, num_images: int) -> int:
     text_tokens = int(len(prompt.split()) * 1.3)
     image_tokens = num_images * TOKENS_PER_512_IMAGE
     return text_tokens + image_tokens
 
 
-def _parse_response(parsed):
+def _parse_response(parsed: Dict) -> Dict:
     if 'confidence' in parsed and isinstance(parsed['confidence'], str):
         try:
             parsed['confidence'] = float(parsed['confidence'])
@@ -63,7 +66,7 @@ def _parse_response(parsed):
     return parsed
 
 
-def analyze_with_llm(images, prompt, image_ids, token_tracker):
+def analyze_with_llm(images: List[str], prompt: str, image_ids: List[str], token_tracker: TokenTracker) -> Optional[Dict]:
     processed_images = []
     for img_path in images:
         pil_img = resize_image(img_path)
@@ -77,17 +80,17 @@ def analyze_with_llm(images, prompt, image_ids, token_tracker):
     input_tokens = _estimate_tokens(prompt, len(processed_images))
     token_tracker.add_input(input_tokens)
 
-    contents = []
+    contents: list[Any] = []
     for i, pil_img in enumerate(processed_images):
         img_id = image_ids[i] if i < len(image_ids) else f'img_{i+1}'
         contents.append(f'=== Image {i+1}: {img_id} ===')
         contents.append(pil_img)
     contents.append(prompt)
 
-    messages = []
+    messages: List[Dict[str, Any]] = []
     if SYSTEM_PROMPT:
         messages.append({"role": "system", "content": SYSTEM_PROMPT})
-    content_blocks = []
+    content_blocks: List[Dict[str, Any]] = []
     for item in contents:
         if isinstance(item, str):
             content_blocks.append({"type": "text", "text": item})
@@ -121,7 +124,7 @@ def analyze_with_llm(images, prompt, image_ids, token_tracker):
     return parsed
 
 
-def run_vision_analysis(preprocessed, evidence_rule, token_tracker):
+def run_vision_analysis(preprocessed: Dict, evidence_rule: Dict, token_tracker: TokenTracker) -> Optional[Dict]:
     if not preprocessed['valid_image']:
         return None
 
@@ -151,7 +154,7 @@ FALLBACK_VISION_RESULT = {
 }
 
 
-def safe_run_vision_analysis(preprocessed, evidence_rule, token_tracker, rate_limiter=None):
+def safe_run_vision_analysis(preprocessed: Dict, evidence_rule: Dict, token_tracker: TokenTracker, rate_limiter: Optional[TokenBucketRateLimiter] = None) -> Optional[Dict]:
     if not preprocessed['valid_image']:
         return None
 

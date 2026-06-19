@@ -1,5 +1,8 @@
 import logging
 import random
+from typing import Dict, Optional
+
+import pandas as pd
 
 random.seed(42)
 
@@ -48,7 +51,7 @@ MULTILANG_KEYWORDS = {
 FALLBACK_APPLIES_TO = 'general claim review'
 
 
-def _detect_issue_from_text(text):
+def _detect_issue_from_text(text: Optional[str]) -> Optional[str]:
     if not text:
         return None
 
@@ -66,7 +69,7 @@ def _detect_issue_from_text(text):
     return None
 
 
-def get_relevant_rule(claim_object, user_claim, evidence_df):
+def get_relevant_rule(claim_object: str, user_claim: str, evidence_df: pd.DataFrame) -> Dict:
     text = user_claim.lower() if user_claim else ''
 
     matched_keyword = _detect_issue_from_text(text)

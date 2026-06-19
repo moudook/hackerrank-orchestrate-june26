@@ -2,3 +2,7 @@
 __pycache__
 .opencode_state.json
 .work/
+.checkpoint.json
+.cache/
+.tmp/
+output.csv

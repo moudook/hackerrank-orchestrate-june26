@@ -1,5 +1,6 @@
 import logging
 import os
+from typing import Dict, Union
 
 from config import ALLOWED_CLAIM_STATUS, ALLOWED_ISSUE_TYPES, ALLOWED_OBJECT_PARTS, ALLOWED_RISK_FLAGS, ALLOWED_SEVERITY
 
@@ -22,7 +23,7 @@ RISK_FLAG_DEPENDENCIES = {
 }
 
 
-def _clamp_confidence(value):
+def _clamp_confidence(value: Union[str, float, int]) -> float:
     try:
         v = float(value)
         return max(0.0, min(1.0, v))
@@ -30,13 +31,13 @@ def _clamp_confidence(value):
         return 0.0
 
 
-def _bool_or_false(value):
+def _bool_or_false(value: Union[bool, str, int]) -> bool:
     if value is True or str(value).lower() in ('true', '1', 'yes'):
         return True
     return False
 
 
-def validate_output(output):
+def validate_output(output: Dict) -> Dict:
     validated = dict(output)
     claim_object = validated.get('claim_object', 'unknown')
 

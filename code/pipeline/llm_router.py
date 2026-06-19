@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import os
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import litellm
 from PIL import Image
@@ -21,14 +22,14 @@ class ConfigurationError(Exception):
     pass
 
 
-def _pil_to_base64(pil_image, fmt='JPEG'):
+def _pil_to_base64(pil_image: Image.Image, fmt: str = 'JPEG') -> str:
     buf = io.BytesIO()
     pil_image.save(buf, format=fmt, quality=85)
     buf.seek(0)
     return base64.b64encode(buf.read()).decode('utf-8')
 
 
-def _build_image_block(pil_image):
+def _build_image_block(pil_image: Image.Image) -> Dict:
     b64 = _pil_to_base64(pil_image)
     return {
         "type": "image_url",
@@ -36,15 +37,15 @@ def _build_image_block(pil_image):
     }
 
 
-def _build_text_block(text):
+def _build_text_block(text: str) -> Dict:
     return {"type": "text", "text": text}
 
 
-def _build_messages(contents, system_prompt=None):
-    messages = []
+def _build_messages(contents: List[Union[str, Image.Image]], system_prompt: Optional[str] = None) -> List[Dict[str, Any]]:
+    messages: List[Dict[str, Any]] = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
-    content_blocks = []
+    content_blocks: List[Dict[str, Any]] = []
     for item in contents:
         if isinstance(item, Image.Image):
             content_blocks.append(_build_image_block(item))
@@ -56,7 +57,7 @@ def _build_messages(contents, system_prompt=None):
     return messages
 
 
-def _is_retryable(exception):
+def _is_retryable(exception: BaseException) -> bool:
     if isinstance(exception, ConfigurationError):
         return False
     try:
@@ -71,7 +72,7 @@ def _is_retryable(exception):
     stop=stop_after_attempt(5),
     retry=retry_if_exception(_is_retryable)
 )
-def _build_completion_kwargs(messages, model, response_schema, temperature, timeout, api_key=None):
+def _build_completion_kwargs(messages: List[Dict[str, Any]], model: str, response_schema: Optional[Dict[str, Any]], temperature: float, timeout: int, api_key: Optional[str] = None) -> Tuple[Dict[str, Any], str]:
     provider = model.split('/')[0] if '/' in model else LLM_PROVIDER
     kwargs = {
         "model": model,
@@ -104,7 +105,7 @@ def _build_completion_kwargs(messages, model, response_schema, temperature, time
     return kwargs, provider
 
 
-def _try_single_call(messages, model, response_schema, temperature, timeout, api_key=None):
+def _try_single_call(messages: List[Dict[str, Any]], model: str, response_schema: Optional[Dict[str, Any]], temperature: float, timeout: int, api_key: Optional[str] = None) -> Any:
     kwargs, provider = _build_completion_kwargs(
         messages, model, response_schema, temperature, timeout, api_key
     )
@@ -118,7 +119,7 @@ def _try_single_call(messages, model, response_schema, temperature, timeout, api
         return litellm.completion(**kwargs)
 
 
-def llm_complete(messages, model=None, api_key=None, response_schema=None, temperature=0.0, timeout=180):
+def llm_complete(messages: List[Dict[str, Any]], model: Optional[str] = None, api_key: Optional[str] = None, response_schema: Optional[Dict[str, Any]] = None, temperature: float = 0.0, timeout: int = 180) -> Any:
     litellm.set_verbose = False
 
     model = model or VISION_MODEL
@@ -132,7 +133,7 @@ def llm_complete(messages, model=None, api_key=None, response_schema=None, tempe
     return _try_single_call(messages, model, response_schema, temperature, timeout, api_key)
 
 
-def llm_complete_with_fallback(messages, model=None, response_schema=None, temperature=0.0, timeout=180):
+def llm_complete_with_fallback(messages: List[Dict[str, Any]], model: Optional[str] = None, response_schema: Optional[Dict[str, Any]] = None, temperature: float = 0.0, timeout: int = 180) -> Any:
     litellm.set_verbose = False
 
     model = model or VISION_MODEL
@@ -162,7 +163,7 @@ def llm_complete_with_fallback(messages, model=None, response_schema=None, tempe
     raise Exception("All LLM providers in fallback chain failed")
 
 
-def extract_json(response):
+def extract_json(response: Any) -> Optional[Dict]:
     text = response.choices[0].message.content if response.choices else ''
     if not text:
         logger.error("Empty response from LLM")
@@ -180,7 +181,7 @@ def extract_json(response):
         return None
 
 
-def get_token_usage(response):
+def get_token_usage(response: Any) -> Dict:
     if hasattr(response, 'usage') and response.usage:
         return {
             'input_tokens': getattr(response.usage, 'prompt_tokens', 0),

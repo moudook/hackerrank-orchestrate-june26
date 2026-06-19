@@ -1,0 +1,11 @@
+.git/
+.gitignore
+__pycache__/
+*.pyc
+.env
+.checkpoint.json
+.cache/
+.tmp/
+.work/
+.demo/
+**/.DS_Store

@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+from typing import Optional, Tuple
 
 import pandas as pd
 
@@ -17,14 +18,14 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(MODULE_DIR)), 'dataset')
 VALID_OBJECTS = {'car', 'laptop', 'package'}
 
 
-def _validate_columns(df, expected, name):
+def _validate_columns(df: pd.DataFrame, expected: list[str], name: str) -> bool:
     missing = [c for c in expected if c not in df.columns]
     if missing:
         raise ValueError(f"{name} missing columns: {missing}")
     return True
 
 
-def _try_read_csv(path, encodings=('utf-8-sig', 'utf-8', 'latin-1')):
+def _try_read_csv(path: str, encodings: Tuple[str, ...] = ('utf-8-sig', 'utf-8', 'latin-1')) -> pd.DataFrame:
     for enc in encodings:
         try:
             df = pd.read_csv(path, encoding=enc)
@@ -37,7 +38,7 @@ def _try_read_csv(path, encodings=('utf-8-sig', 'utf-8', 'latin-1')):
     raise ValueError(f"Could not read {path} with any encoding in {encodings}")
 
 
-def load_claims(path=None):
+def load_claims(path: Optional[str] = None) -> pd.DataFrame:
     path = path or os.path.join(DATA_DIR, 'claims.csv')
     if not os.path.exists(path):
         raise FileNotFoundError(f"claims.csv not found at {path}")
@@ -57,7 +58,7 @@ def load_claims(path=None):
     return df
 
 
-def load_sample_claims(path=None):
+def load_sample_claims(path: Optional[str] = None) -> pd.DataFrame:
     path = path or os.path.join(DATA_DIR, 'sample_claims.csv')
     if not os.path.exists(path):
         raise FileNotFoundError(f"sample_claims.csv not found at {path}")
@@ -65,7 +66,7 @@ def load_sample_claims(path=None):
     return df
 
 
-def load_user_history(path=None):
+def load_user_history(path: Optional[str] = None) -> pd.DataFrame:
     path = path or os.path.join(DATA_DIR, 'user_history.csv')
     if not os.path.exists(path):
         raise FileNotFoundError(f"user_history.csv not found at {path}")
@@ -78,7 +79,7 @@ def load_user_history(path=None):
     return df
 
 
-def load_evidence_requirements(path=None):
+def load_evidence_requirements(path: Optional[str] = None) -> pd.DataFrame:
     path = path or os.path.join(DATA_DIR, 'evidence_requirements.csv')
     if not os.path.exists(path):
         raise FileNotFoundError(f"evidence_requirements.csv not found at {path}")
@@ -87,7 +88,7 @@ def load_evidence_requirements(path=None):
     return df
 
 
-def load_all():
+def load_all() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     logger.info(f"Loading data from {DATA_DIR}")
     claims = load_claims()
     user_history = load_user_history()

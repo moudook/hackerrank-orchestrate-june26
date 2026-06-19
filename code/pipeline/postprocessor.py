@@ -1,4 +1,5 @@
 import logging
+from typing import Dict, Optional
 
 from config import ALLOWED_OBJECT_PARTS, ALLOWED_RISK_FLAGS
 
@@ -19,7 +20,7 @@ TRUST_MANIPULATION_PATTERNS = [
 ]
 
 
-def _check_trust_manipulation(user_claim):
+def _check_trust_manipulation(user_claim: str) -> bool:
     if not user_claim:
         return False
     text = user_claim.lower()
@@ -30,7 +31,7 @@ def _check_trust_manipulation(user_claim):
     return False
 
 
-def _build_risk_flags(vision_result, preprocessed, history):
+def _build_risk_flags(vision_result: Dict, preprocessed: Dict, history: Optional[Dict]) -> str:
     risk_flags = []
 
     vision_flags = vision_result.get('risk_flags', 'none')
@@ -92,8 +93,8 @@ def _build_risk_flags(vision_result, preprocessed, history):
     return ';'.join(risk_flags) if risk_flags else 'none'
 
 
-def apply_claim_decision(preprocessed, vision_result, evidence_rule,
-                         override_risk_flags=None, override_justification=None):
+def apply_claim_decision(preprocessed: Dict, vision_result: Optional[Dict], evidence_rule: Dict,
+                         override_risk_flags: Optional[str] = None, override_justification: Optional[str] = None) -> Dict:
     claim_object = preprocessed['claim_object']
     minimum_evidence = evidence_rule.get('minimum_image_evidence', '')
     history = preprocessed['history']

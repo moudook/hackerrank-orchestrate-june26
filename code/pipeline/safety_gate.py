@@ -1,5 +1,6 @@
 import logging
 import random
+from typing import Dict, List, Optional
 
 random.seed(42)
 
@@ -25,7 +26,7 @@ TRUST_MANIPULATION_PATTERNS = [
 ]
 
 
-def _check_text_risk(user_claim):
+def _check_text_risk(user_claim: str) -> List[str]:
     if not user_claim:
         return []
     text = user_claim.lower()
@@ -48,7 +49,7 @@ def _check_text_risk(user_claim):
     return flags
 
 
-def _check_history_risk(history):
+def _check_history_risk(history: Optional[Dict]) -> List[str]:
     if not history:
         return []
     flags = []
@@ -63,7 +64,7 @@ def _check_history_risk(history):
     return flags
 
 
-def evaluate_safety_gate(preprocessed):
+def evaluate_safety_gate(preprocessed: Dict) -> Optional[Dict]:
     user_id = preprocessed.get('user_id', '')
     user_claim = preprocessed.get('user_claim', '')
     history = preprocessed.get('history')
