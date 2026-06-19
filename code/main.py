@@ -1,5 +1,6 @@
 import sys
 import os
+import argparse
 import logging
 import concurrent.futures
 
@@ -141,5 +142,50 @@ def main():
     print(f"  Peak TPM: {rl_stats['current_tpm']}")
 
 
-if __name__ == '__main__':
+def cli():
+    parser = argparse.ArgumentParser(
+        description='Multi-Modal Evidence Review Pipeline',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python main.py                       # Run production pipeline on claims.csv
+  python main.py --reset-checkpoint    # Clear checkpoint and re-run all claims
+  python main.py --verbose             # Enable debug logging
+  python main.py --model gemini-2.5-flash  # Override model from env/config
+        """
+    )
+    parser.add_argument('--reset-checkpoint', action='store_true',
+                        help='Clear checkpoint and re-process all claims')
+    parser.add_argument('--verbose', action='store_true',
+                        help='Enable debug-level logging')
+    parser.add_argument('--model', type=str, default=None,
+                        help='Override Gemini model name')
+    parser.add_argument('--output', type=str, default=None,
+                        help='Override output CSV path')
+    args = parser.parse_args()
+
+    if args.verbose:
+        for handler in logging.getLogger().handlers:
+            handler.setLevel(logging.DEBUG)
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    if args.model:
+        import config as cfg
+        cfg.MODEL_NAME = args.model
+        logger.info(f"Model overridden to: {args.model}")
+
+    if args.output:
+        global OUTPUT_PATH
+        OUTPUT_PATH = args.output
+
+    if args.reset_checkpoint:
+        from utils.checkpoint import CheckpointManager
+        cm = CheckpointManager(CHECKPOINT_PATH)
+        cm.reset()
+        logger.info("Checkpoint reset. All claims will be re-processed.")
+
     main()
+
+
+if __name__ == '__main__':
+    cli()
