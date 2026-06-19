@@ -128,10 +128,11 @@ def main():
 
     summary = token_tracker.summary()
     rl_stats = rate_limiter.stats()
+    cached_count = len([r for r in all_results if r[1].get('claim_status_justification', '').startswith('Claim status')])
     print("\n=== Pipeline Summary ===")
     print(f"  Claims processed: {len(final_results)}")
     print(f"  New API calls: {summary['total_calls']}")
-    print(f"  From checkpoint: {checkpoint.get_completed_count() - len(remaining_indices)}")
+    print(f"  From checkpoint: {checkpoint.get_completed_count()}")
     print(f"  Input tokens: {summary['input_tokens']}")
     print(f"  Output tokens: {summary['output_tokens']}")
     print(f"  Estimated cost: ${summary['estimated_cost']:.6f}")

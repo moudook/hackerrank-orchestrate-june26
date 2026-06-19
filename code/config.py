@@ -3,12 +3,13 @@ import sys
 import logging
 from dotenv import load_dotenv
 
-load_dotenv()
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+load_dotenv(_env_path)
 
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-MODEL_NAME = os.getenv('MODEL_NAME', 'gemini-2.5-flash')
+MODEL_NAME = os.getenv('MODEL_NAME', 'gemini-2.0-flash')
 MAX_IMAGES_PER_CALL = int(os.getenv('MAX_IMAGES_PER_CALL', '4'))
 RATE_LIMIT_RPM = int(os.getenv('RATE_LIMIT_RPM', '2000'))
 RATE_LIMIT_TPM = int(os.getenv('RATE_LIMIT_TPM', '4000000'))
