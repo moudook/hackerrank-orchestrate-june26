@@ -5,26 +5,26 @@
 - Temperature: 0.1
 - Max images per call: 4
 
-## Sample Claims Performance (n=50)
-- Accuracy claim_status: X%
-- Accuracy issue_type: X%
-- Accuracy object_part: X%
+## Sample Claims Performance (n=[n])
+- Accuracy claim_status: [claim_status_acc]% ([correct_claim_status]/[n])
+- Accuracy issue_type: [issue_type_acc]% ([correct_issue_type]/[n])
+- Accuracy object_part: [object_part_acc]% ([correct_object_part]/[n])
 
 ## Operational Analysis
-- Total model calls: [from token_tracker]
-- Total input tokens: [sum]
-- Total output tokens: [sum]
-- Total images processed: [count]
-- Average latency per claim: [total_time/n] seconds
-- Estimated cost: $[ (input/1e6*0.10) + (output/1e6*0.40) ]
-- Peak TPM: [max in any minute]
-- Peak RPM: [max in any minute]
+- Total model calls: [model_calls]
+- Total input tokens: [input_tokens]
+- Total output tokens: [output_tokens]
+- Total images processed: [total_images]
+- Average latency per claim: [avg_latency] seconds
+- Estimated cost: [cost]
+- Peak TPM: [peak_tpm]
+- Peak RPM: [peak_rpm]
 
 ## Strategies Compared
 1. Baseline: Single call with full evidence_requirements
 2. Optimized: Dynamic filtering (chosen)
-   - Token reduction: X%
-   - Accuracy delta: +X%
+   - Token reduction: N/A
+   - Accuracy delta: N/A
 
 ## Rate Limiting Strategy
 - Exponential backoff with max 5 retries

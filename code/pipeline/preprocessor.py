@@ -17,7 +17,7 @@ def _normalize_path(raw_path):
 
 
 def _resolve_image_path(normalized_path):
-    base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'dataset')
+    base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'dataset')
     path_attempts = [
         os.path.join(base_dir, normalized_path),
         os.path.join(base_dir, normalized_path.lstrip('dataset/')),

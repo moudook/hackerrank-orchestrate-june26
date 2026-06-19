@@ -7,7 +7,8 @@ EXPECTED_HISTORY_COLUMNS = ['user_id', 'past_claim_count', 'accept_claim', 'manu
                             'rejected_claim', 'last_90_days_claim_count', 'history_flags', 'history_summary']
 EXPECTED_EVIDENCE_COLUMNS = ['requirement_id', 'claim_object', 'applies_to', 'minimum_image_evidence']
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'dataset')
+MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(MODULE_DIR)), 'dataset')
 
 
 def _validate_columns(df, expected, name):
