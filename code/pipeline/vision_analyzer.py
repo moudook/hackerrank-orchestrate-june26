@@ -6,8 +6,9 @@ from google import genai
 from google.genai import errors, types
 from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception
 
-from config import GEMINI_API_KEY, MODEL_NAME, STRUCTURED_OUTPUT_SCHEMA
+from config import GEMINI_API_KEY, MODEL_NAME, STRUCTURED_OUTPUT_SCHEMA, CACHE_ENABLED, CACHE_DIR
 from utils.image_utils import resize_image
+from utils.cache import ResponseCache
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,8 @@ client = genai.Client(
     api_key=GEMINI_API_KEY,
     http_options=types.HttpOptions(timeout=180_000)
 )
+
+_cache = ResponseCache(CACHE_DIR, enabled=CACHE_ENABLED)
 
 TOKENS_PER_512_IMAGE = 258
 
@@ -66,6 +69,11 @@ def analyze_with_gemini(images, prompt, image_ids, token_tracker):
         pil_img = resize_image(img_path)
         processed_images.append(pil_img)
 
+    cached = _cache.get(prompt, images, MODEL_NAME)
+    if cached is not None:
+        logger.debug(f"Cache hit for {len(images)} images")
+        return cached
+
     input_tokens = _estimate_tokens(prompt, len(processed_images))
     token_tracker.add_input(input_tokens)
 
@@ -113,6 +121,8 @@ def analyze_with_gemini(images, prompt, image_ids, token_tracker):
 
     if 'image_quality_issues' in parsed and isinstance(parsed['image_quality_issues'], list):
         parsed['image_quality_issues'] = ';'.join(parsed['image_quality_issues']) if parsed['image_quality_issues'] else 'none'
+
+    _cache.set(prompt, images, MODEL_NAME, parsed)
 
     return parsed
 

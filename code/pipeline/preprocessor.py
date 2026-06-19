@@ -7,6 +7,9 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+MIN_IMAGE_DIMENSION = 100
+MAX_IMAGE_SIZE_MB = 20
+
 
 def _normalize_path(raw_path):
     raw_path = raw_path.strip()
@@ -39,10 +42,22 @@ def _is_valid_image(filepath):
         if os.path.getsize(filepath) == 0:
             logger.warning(f"Zero-byte image: {filepath}")
             return False
+
+        size_mb = os.path.getsize(filepath) / (1024 * 1024)
+        if size_mb > MAX_IMAGE_SIZE_MB:
+            logger.warning(f"Image too large ({size_mb:.1f}MB): {filepath}")
+            return False
+
         with Image.open(filepath) as img:
             img.verify()
+
         with Image.open(filepath) as img:
             img.load()
+            w, h = img.size
+            if w < MIN_IMAGE_DIMENSION or h < MIN_IMAGE_DIMENSION:
+                logger.warning(f"Image too small ({w}x{h}): {filepath}")
+                return False
+
         return True
     except Exception:
         logger.warning(f"Corrupted image: {filepath}")
@@ -94,7 +109,7 @@ def preprocess_claim(row, user_history_df):
             continue
 
         if not _is_valid_image(full_path):
-            logger.warning(f"Invalid image (corrupt/empty): {p}")
+            logger.warning(f"Invalid image (corrupt/empty/tiny): {p}")
             continue
 
         image_id = _extract_image_id(full_path)

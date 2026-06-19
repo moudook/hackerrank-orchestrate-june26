@@ -1,28 +1,74 @@
 import logging
+import re
 import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 ISSUE_KEYWORD_MAP = {
-    'dent': ['dent', 'scratch', 'scrape', 'scuff'],
-    'crack': ['crack', 'shatter', 'broken'],
-    'water': ['water', 'wet', 'liquid', 'spill', 'moisture', 'damp'],
-    'torn': ['torn', 'rip', 'tear', 'ripped', 'tore'],
-    'crush': ['crush', 'squash', 'squeeze', 'crumple'],
-    'stain': ['stain', 'mark', 'spot', 'oil'],
+    'dent': ['dent', 'scratch', 'scrape', 'scuff', 'ding', 'dented', 'denting'],
+    'crack': ['crack', 'shatter', 'broken', 'fracture', 'cracked', 'shattered'],
+    'water': ['water', 'wet', 'liquid', 'spill', 'moisture', 'damp', 'leak', 'rain', 'water_damage'],
+    'torn': ['torn', 'rip', 'tear', 'ripped', 'tore', 'tearing', 'open'],
+    'crush': ['crush', 'squash', 'squeeze', 'crumple', 'crushed', 'squashed', 'dab', 'dab gaya'],
+    'stain': ['stain', 'mark', 'spot', 'oil', 'grease', 'stained', 'oily', 'dirty'],
+    'missing': ['missing', 'lost', 'gone', 'absent', 'falt', 'gaya', 'missing keys'],
+    'glass_shatter': ['glass', 'shatter', 'shattered', 'windshield', 'broken glass'],
+}
+
+MULTILANG_KEYWORDS = {
+    'hindi': {
+        'dent': ['dent', 'dent lag', 'thokar', 'thokar se'],
+        'crack': ['crack', 'darar', 'phoot', 'phat'],
+        'water': ['pani', 'geela', 'bheega', 'nam'],
+        'torn': ['phat', 'phat gaya', 'torn'],
+        'crush': ['dab', 'dab gaya', 'daba', 'kuchal', 'crush'],
+        'stain': ['daag', 'dhabba', 'oil'],
+        'missing': ['falt', 'gaya', 'kho', 'missing'],
+        'glass_shatter': ['sheesha', 'khanch', 'toot'],
+    },
+    'spanish': {
+        'dent': ['abolladura', 'abollado', 'golpe'],
+        'crack': ['grieta', 'rajadura', 'roto', 'quebrado'],
+        'water': ['agua', 'humedo', 'mojado'],
+        'torn': ['rasgado', 'roto', 'desgarrado'],
+        'crush': ['aplastado', 'aplastar'],
+        'stain': ['mancha', 'sucio'],
+        'missing': ['falta', 'perdido', 'desaparecido'],
+        'glass_shatter': ['vidrio', 'cristal', 'parabrisas'],
+    },
+    'chinese': {
+        'crack': ['lie', 'po', 'sui', 'broken'],
+        'water': ['shui', 'shi'],
+        'screen': ['ping mu', 'ping'],
+        'keyboard': ['jian pan'],
+    }
 }
 
 FALLBACK_APPLIES_TO = 'general claim review'
 
 
+def _detect_issue_from_text(text):
+    if not text:
+        return None
+
+    text_lower = text.lower()
+
+    for keyword, keywords_list in ISSUE_KEYWORD_MAP.items():
+        if any(k in text_lower for k in keywords_list):
+            return keyword
+
+    for lang, lang_map in MULTILANG_KEYWORDS.items():
+        for issue, keywords in lang_map.items():
+            if any(k in text_lower for k in keywords):
+                return issue
+
+    return None
+
+
 def get_relevant_rule(claim_object, user_claim, evidence_df):
     text = user_claim.lower() if user_claim else ''
 
-    matched_keyword = None
-    for keyword, keywords_list in ISSUE_KEYWORD_MAP.items():
-        if any(k in text for k in keywords_list):
-            matched_keyword = keyword
-            break
+    matched_keyword = _detect_issue_from_text(text)
 
     object_rows = evidence_df[
         evidence_df['claim_object'].isin([claim_object, 'all'])
