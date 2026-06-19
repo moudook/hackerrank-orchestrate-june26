@@ -10,20 +10,20 @@ from utils.logger import setup_logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
-import pandas as pd  # noqa: E402
-from config import CACHE_DIR, CACHE_ENABLED, MODEL_NAME  # noqa: E402
-from pipeline.evidence_filter import get_relevant_rule  # noqa: E402
-from pipeline.loader import load_all, load_sample_claims  # noqa: E402
-from pipeline.postprocessor import apply_claim_decision  # noqa: E402
-from pipeline.preprocessor import preprocess_claim  # noqa: E402
-from pipeline.safety_gate import evaluate_safety_gate  # noqa: E402
-from pipeline.validator import validate_output  # noqa: E402
-from pipeline.vision_analyzer import safe_run_vision_analysis  # noqa: E402
-from utils.cache import ResponseCache  # noqa: E402
-from utils.rate_limiter import AdaptiveRateLimiter  # noqa: E402
-from utils.token_tracker import TokenTracker  # noqa: E402
+import pandas as pd
+from config import CACHE_DIR, CACHE_ENABLED, MODEL_NAME
+from pipeline.evidence_filter import get_relevant_rule
+from pipeline.loader import load_all, load_sample_claims
+from pipeline.postprocessor import apply_claim_decision
+from pipeline.preprocessor import preprocess_claim
+from pipeline.safety_gate import evaluate_safety_gate
+from pipeline.validator import validate_output
+from pipeline.vision_analyzer import safe_run_vision_analysis
+from utils.cache import ResponseCache
+from utils.rate_limiter import AdaptiveRateLimiter
+from utils.token_tracker import TokenTracker
 
-from evaluation.metrics import compute_accuracy, compute_detailed_metrics  # noqa: E402
+from evaluation.metrics import compute_accuracy, compute_detailed_metrics
 
 OUTPUT_COLUMNS = [
     'user_id', 'image_paths', 'user_claim', 'claim_object',
@@ -84,14 +84,6 @@ def run_optimized_strategy(sample, user_history, evidence):
         evidence_rule = get_relevant_rule(preprocessed['claim_object'], preprocessed['user_claim'], evidence)
 
         gate_result = evaluate_safety_gate(preprocessed)
-        if gate_result and gate_result.get('blocked'):
-            decision = apply_claim_decision(
-                preprocessed, None, evidence_rule,
-                override_risk_flags=gate_result['risk_flags'],
-                override_justification=gate_result['reason']
-            )
-            validated = validate_output(decision)
-            return validated, num_images
 
         rate_limiter.acquire()
         try:

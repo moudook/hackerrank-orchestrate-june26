@@ -53,9 +53,7 @@ def _build_risk_flags(vision_result: Dict, preprocessed: Dict, history: Optional
                 risk_flags.append('blurry_image')
             elif issue == 'cropped' and 'cropped_or_obstructed' not in risk_flags:
                 risk_flags.append('cropped_or_obstructed')
-            elif issue == 'dark' and 'low_light_or_glare' not in risk_flags:
-                risk_flags.append('low_light_or_glare')
-            elif issue == 'glare' and 'low_light_or_glare' not in risk_flags:
+            elif issue in ('dark', 'glare') and 'low_light_or_glare' not in risk_flags:
                 risk_flags.append('low_light_or_glare')
             elif issue == 'obstructed' and 'cropped_or_obstructed' not in risk_flags:
                 risk_flags.append('cropped_or_obstructed')
@@ -124,12 +122,12 @@ def apply_claim_decision(preprocessed: Dict, vision_result: Optional[Dict], evid
             'user_claim': preprocessed['user_claim'],
             'claim_object': claim_object,
             'evidence_standard_met': False,
-            'evidence_standard_met_reason': override_justification or 'Blocked by safety gate',
+            'evidence_standard_met_reason': override_justification or 'Safety review required before evaluation',
             'risk_flags': override_risk_flags,
             'issue_type': 'unknown',
             'object_part': 'unknown',
             'claim_status': 'not_enough_information',
-            'claim_status_justification': override_justification or 'Safety gate triggered.',
+            'claim_status_justification': 'Claim requires manual review due to risk flags: ' + override_risk_flags,
             'supporting_image_ids': 'none',
             'valid_image': preprocessed['valid_image'],
             'severity': 'unknown'
@@ -205,31 +203,28 @@ def apply_claim_decision(preprocessed: Dict, vision_result: Optional[Dict], evid
 
     if not evidence_met:
         claim_status = 'not_enough_information'
-        justification = f'Requires: {minimum_evidence[:200]}'
-        evidence_reason = justification
+        justification = f'Visual evidence does not meet the minimum standard: {minimum_evidence[:200]}'
+        evidence_reason = minimum_evidence[:200] if minimum_evidence else 'Insufficient evidence to evaluate the claim'
     elif image_quality == 'poor' and confidence < 0.6:
         claim_status = 'not_enough_information'
-        justification = 'Image quality is poor, cannot reliably assess the claim.'
-        evidence_reason = minimum_evidence[:200] if minimum_evidence else 'Poor image quality'
+        justification = f'Image quality is poor, cannot reliably assess the claim. {visual_desc}'
+        evidence_reason = 'Poor image quality prevents reliable evaluation'
     elif manipulation_suspected or trust_manipulation:
         claim_status = 'not_enough_information'
-        justification = 'Possible manipulation or instruction interference detected. Manual review required.'
-        evidence_reason = 'Safeguard triggered: review required'
+        justification = f'Possible manipulation or instruction interference detected. {visual_desc}'
+        evidence_reason = 'Safeguard triggered: authenticity review required'
     elif confidence < 0.4:
-        issue_type = 'unknown'
-        object_part = 'unknown'
-        severity = 'unknown'
         claim_status = 'not_enough_information'
-        justification = 'Low confidence in visual analysis results.'
+        justification = f'Low confidence ({confidence:.2f}) in visual analysis. {visual_desc}'
     elif issue_type == 'none':
         claim_status = 'contradicted'
-        justification = 'Part is clearly visible and undamaged, contradicting the claim.'
+        justification = f'Part is clearly visible and undamaged, contradicting the claim. {visual_desc}'
     elif issue_type == 'unknown':
         claim_status = 'not_enough_information'
-        justification = 'Cannot determine the issue type from submitted images.'
+        justification = f'Cannot determine the issue type from submitted images. {visual_desc}'
     elif object_part == 'unknown':
         claim_status = 'not_enough_information'
-        justification = 'Cannot identify the relevant object part in the images.'
+        justification = f'Cannot identify the relevant object part in the images. {visual_desc}'
     else:
         if confidence >= 0.7:
             claim_status = 'supported'
@@ -239,7 +234,7 @@ def apply_claim_decision(preprocessed: Dict, vision_result: Optional[Dict], evid
             justification = f'Visual evidence partially supports the claimed damage. {visual_desc}'
         else:
             claim_status = 'not_enough_information'
-            justification = 'Visual evidence is insufficient to confidently support the claim.'
+            justification = f'Visual evidence is insufficient to confidently support the claim. {visual_desc}'
 
     if isinstance(supporting_ids_raw, list):
         supporting_ids_str = ';'.join(supporting_ids_raw) if supporting_ids_raw else 'none'

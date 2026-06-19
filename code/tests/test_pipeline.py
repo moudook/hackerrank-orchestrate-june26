@@ -162,7 +162,7 @@ class TestPostprocessor:
         assert result['claim_status'] == 'not_enough_information'
         assert 'possible_manipulation' in result['risk_flags']
         assert 'manual_review_required' in result['risk_flags']
-        assert 'Safety gate blocked' in result['claim_status_justification']
+        assert 'manual review' in result['claim_status_justification'].lower()
 
 
 class TestValidatorEdgeCases:

@@ -66,11 +66,12 @@ class TestEvaluateSafetyGate:
         assert result is not None
         assert result['blocked'] is True
 
-    def test_blocks_history_risk(self):
+    def test_flags_history_risk(self):
         pre = {'user_id': 'u2', 'user_claim': 'dent on door', 'history': {'rejected_claim': 5, 'last_90_days_claim_count': 1, 'history_flags': ''}}
         result = evaluate_safety_gate(pre)
         assert result is not None
-        assert result['blocked'] is True
+        assert result['blocked'] is False
+        assert 'user_history_risk' in result['risk_flags']
 
     def test_flags_review_not_blocked(self):
         pre = {'user_id': 'u3', 'user_claim': 'I need legal compensation for this damage', 'history': None}

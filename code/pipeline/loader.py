@@ -62,8 +62,7 @@ def load_sample_claims(path: Optional[str] = None) -> pd.DataFrame:
     path = path or os.path.join(DATA_DIR, 'sample_claims.csv')
     if not os.path.exists(path):
         raise FileNotFoundError(f"sample_claims.csv not found at {path}")
-    df = _try_read_csv(path)
-    return df
+    return _try_read_csv(path)
 
 
 def load_user_history(path: Optional[str] = None) -> pd.DataFrame:

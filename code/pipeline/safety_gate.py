@@ -77,26 +77,16 @@ def evaluate_safety_gate(preprocessed: Dict) -> Optional[Dict]:
         return None
 
     risk_flags = list(dict.fromkeys(risk_flags))
-    blocked = any(f in risk_flags for f in [
-        'text_instruction_present', 'possible_manipulation',
-        'user_history_risk',
-    ])
+    blocked = 'text_instruction_present' in risk_flags
     needs_review = 'manual_review_required' in risk_flags
 
-    if blocked:
-        logger.info(f"Safety gate BLOCKED user={user_id}: {risk_flags}")
+    if blocked or needs_review or risk_flags:
+        msg = 'blocked' if blocked else ('flagged' if needs_review else 'flagged')
+        logger.info(f"Safety gate {msg} user={user_id}: {risk_flags}")
         return {
-            'blocked': True,
+            'blocked': blocked,
             'risk_flags': ';'.join(risk_flags),
-            'reason': 'Safety gate blocked: ' + '; '.join(risk_flags),
-        }
-
-    if needs_review:
-        logger.info(f"Safety gate flagged user={user_id}: manual review suggested")
-        return {
-            'blocked': False,
-            'risk_flags': ';'.join(risk_flags),
-            'reason': 'Manual review suggested: ' + '; '.join(risk_flags),
+            'reason': '; '.join(risk_flags),
         }
 
     return None

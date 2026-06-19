@@ -20,8 +20,7 @@ def enhance_image(img: Image.Image) -> Image.Image:
     img = ImageOps.autocontrast(img, cutoff=2)
     enhancer = ImageEnhance.Sharpness(img)
     img = enhancer.enhance(1.2)
-    img = img.filter(ImageFilter.SMOOTH)
-    return img
+    return img.filter(ImageFilter.SMOOTH)
 
 
 def resize_image(image_path_or_pil: Union[str, Image.Image], max_dim: int = MAX_DIMENSION) -> Image.Image:

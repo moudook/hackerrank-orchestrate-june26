@@ -11,7 +11,6 @@ from utils.logger import setup_logging
 setup_logging()
 logging.getLogger().setLevel(logging.WARNING)
 
-import pandas as pd
 from config import validate_config
 
 OUTPUT_COLUMNS = [
@@ -34,8 +33,8 @@ def benchmark_dry_run(count=44):
     for idx, row in samples.iterrows():
         t0 = time.perf_counter()
         pre = preprocess_claim(row, user_history)
-        gate = evaluate_safety_gate(pre)
-        rule = get_relevant_rule(pre['claim_object'], pre['user_claim'], evidence)
+        evaluate_safety_gate(pre)
+        get_relevant_rule(pre['claim_object'], pre['user_claim'], evidence)
         t1 = time.perf_counter()
         times.append(t1 - t0)
     total = sum(times)

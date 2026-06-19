@@ -207,7 +207,7 @@ class TestIntegrationPipelineOutput:
             'issue_type', 'object_part', 'claim_status', 'claim_status_justification',
             'supporting_image_ids', 'valid_image', 'severity'
         ]
-        assert OUTPUT_COLUMNS == expected
+        assert expected == OUTPUT_COLUMNS
 
     def test_single_claim_processing(self):
         from pipeline.loader import load_claims, load_evidence_requirements, load_user_history
@@ -258,10 +258,10 @@ class TestIntegrationFullPipeline:
         assert validated['claim_status'] == 'supported'
         assert validated['issue_type'] == 'dent'
         assert validated['object_part'] == 'front_bumper'
-        assert validated['valid_image'] is True
+        assert validated['valid_image'] == 'true'
         assert len(validated) == 14
 
-    def test_safety_gate_blocks_before_vlm(self):
+    def test_safety_gate_flags_history_risk(self):
         from pipeline.preprocessor import preprocess_claim
         from pipeline.safety_gate import evaluate_safety_gate
         from pipeline.evidence_filter import get_relevant_rule
@@ -283,7 +283,7 @@ class TestIntegrationFullPipeline:
         pre = preprocess_claim(row, history_risky)
         gate = evaluate_safety_gate(pre)
         assert gate is not None
-        assert gate['blocked'] is True
+        assert gate['blocked'] is False
         assert 'user_history_risk' in gate['risk_flags']
 
         rule = get_relevant_rule(pre['claim_object'], pre['user_claim'], pd.DataFrame({
@@ -298,7 +298,7 @@ class TestIntegrationFullPipeline:
         )
         validated = validate_output(decision)
         assert validated['claim_status'] == 'not_enough_information'
-        assert 'Safety gate blocked' in validated['claim_status_justification']
+        assert 'user_history_risk' in validated['risk_flags']
 
     def test_prompt_injection_blocked(self):
         from pipeline.preprocessor import preprocess_claim

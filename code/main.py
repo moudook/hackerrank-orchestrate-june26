@@ -12,18 +12,18 @@ from utils.logger import setup_logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
-import pandas as pd  # noqa: E402
-from config import CACHE_DIR, CACHE_ENABLED, MAX_WORKERS, validate_config  # noqa: E402
-from pipeline.evidence_filter import get_relevant_rule  # noqa: E402
-from pipeline.loader import load_all  # noqa: E402
-from pipeline.postprocessor import apply_claim_decision  # noqa: E402
-from pipeline.preprocessor import preprocess_claim  # noqa: E402
-from pipeline.safety_gate import evaluate_safety_gate  # noqa: E402
-from pipeline.validator import validate_output  # noqa: E402
-from pipeline.vision_analyzer import safe_run_vision_analysis  # noqa: E402
-from utils.checkpoint import CheckpointManager  # noqa: E402
-from utils.rate_limiter import AdaptiveRateLimiter  # noqa: E402
-from utils.token_tracker import TokenTracker  # noqa: E402
+import pandas as pd
+from config import CACHE_DIR, CACHE_ENABLED, MAX_WORKERS, validate_config
+from pipeline.evidence_filter import get_relevant_rule
+from pipeline.loader import load_all
+from pipeline.postprocessor import apply_claim_decision
+from pipeline.preprocessor import preprocess_claim
+from pipeline.safety_gate import evaluate_safety_gate
+from pipeline.validator import validate_output
+from pipeline.vision_analyzer import safe_run_vision_analysis
+from utils.checkpoint import CheckpointManager
+from utils.rate_limiter import AdaptiveRateLimiter
+from utils.token_tracker import TokenTracker
 
 OUTPUT_COLUMNS = [
     'user_id', 'image_paths', 'user_claim', 'claim_object',
@@ -67,14 +67,6 @@ def process_single_claim(idx: int, row: pd.Series, user_history: pd.DataFrame, e
     evidence_rule = get_relevant_rule(preprocessed['claim_object'], preprocessed['user_claim'], evidence)
 
     gate_result = evaluate_safety_gate(preprocessed)
-    if gate_result and gate_result.get('blocked'):
-        decision = apply_claim_decision(
-            preprocessed, None, evidence_rule,
-            override_risk_flags=gate_result['risk_flags'],
-            override_justification=gate_result['reason']
-        )
-        validated = validate_output(decision)
-        return validated
 
     rate_limiter.acquire()
     try:
@@ -88,9 +80,7 @@ def process_single_claim(idx: int, row: pd.Series, user_history: pd.DataFrame, e
             combined = f"{existing};{gate_result['risk_flags']}" if existing != 'none' else gate_result['risk_flags']
             vision_result['risk_flags'] = combined
     decision = apply_claim_decision(preprocessed, vision_result, evidence_rule)
-    validated = validate_output(decision)
-
-    return validated
+    return validate_output(decision)
 
 
 def main(eval_mode=False):

@@ -18,9 +18,8 @@ MAX_IMAGE_SIZE_MB = 20
 def _normalize_path(raw_path: str) -> str:
     raw_path = raw_path.strip()
     raw_path = unquote(raw_path)
-    normalized = raw_path.replace('\\', '/')
-    normalized = os.path.normpath(normalized).replace('\\', '/')
-    return normalized
+    raw_path = raw_path.replace('\\', '/')
+    return os.path.normpath(raw_path).replace('\\', '/')
 
 
 def _resolve_image_path(normalized_path: str) -> Optional[str]:

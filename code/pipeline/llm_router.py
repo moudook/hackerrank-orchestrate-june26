@@ -219,8 +219,7 @@ def _clean_response_text(text: str) -> str:
     text = _strip_think_tags(text)
     text = re.sub(r'```(?:json)?\s*', '', text)
     text = re.sub(r'\s*```', '', text)
-    text = text.strip()
-    return text
+    return text.strip()
 
 
 def _try_parse_json(text: str) -> Optional[Dict]:

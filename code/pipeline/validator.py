@@ -95,9 +95,9 @@ def validate_output(output: Dict) -> Dict:
     else:
         validated['supporting_image_ids'] = 'none'
 
-    validated['evidence_standard_met'] = _bool_or_false(validated.get('evidence_standard_met', False))
+    validated['evidence_standard_met'] = 'true' if _bool_or_false(validated.get('evidence_standard_met', False)) else 'false'
 
-    validated['valid_image'] = _bool_or_false(validated.get('valid_image', False))
+    validated['valid_image'] = 'true' if _bool_or_false(validated.get('valid_image', False)) else 'false'
 
     evidence_reason = validated.get('evidence_standard_met_reason', '')
     if not evidence_reason or str(evidence_reason).strip() == '':
