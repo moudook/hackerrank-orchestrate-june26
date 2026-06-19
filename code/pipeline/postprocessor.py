@@ -93,16 +93,34 @@ def _build_risk_flags(vision_result: Dict, preprocessed: Dict, history: Optional
     return ';'.join(risk_flags) if risk_flags else 'none'
 
 
+def _compute_valid_image(vision_result: Dict, preprocessed: Dict) -> bool:
+    if not preprocessed['valid_image']:
+        return False
+    if not preprocessed['image_paths']:
+        return False
+    risk_flags = vision_result.get('risk_flags', 'none')
+    if isinstance(risk_flags, str):
+        flags = risk_flags.split(';')
+    elif isinstance(risk_flags, list):
+        flags = risk_flags
+    else:
+        flags = []
+    if 'non_original_image' in flags:
+        return False
+    return True
+
+
 def apply_claim_decision(preprocessed: Dict, vision_result: Optional[Dict], evidence_rule: Dict,
                          override_risk_flags: Optional[str] = None, override_justification: Optional[str] = None) -> Dict:
     claim_object = preprocessed['claim_object']
     minimum_evidence = evidence_rule.get('minimum_image_evidence', '')
     history = preprocessed['history']
+    orig_paths = preprocessed.get('original_image_paths', ';'.join(preprocessed.get('image_ids', [])))
 
     if override_risk_flags:
         return {
             'user_id': preprocessed['user_id'],
-            'image_paths': ';'.join(preprocessed['image_ids']),
+            'image_paths': orig_paths,
             'user_claim': preprocessed['user_claim'],
             'claim_object': claim_object,
             'evidence_standard_met': False,
@@ -120,7 +138,7 @@ def apply_claim_decision(preprocessed: Dict, vision_result: Optional[Dict], evid
     if not preprocessed['valid_image'] or not preprocessed['image_paths']:
         return {
             'user_id': preprocessed['user_id'],
-            'image_paths': ';'.join(preprocessed['image_ids']),
+            'image_paths': orig_paths,
             'user_claim': preprocessed['user_claim'],
             'claim_object': claim_object,
             'evidence_standard_met': False,
@@ -131,7 +149,7 @@ def apply_claim_decision(preprocessed: Dict, vision_result: Optional[Dict], evid
             'claim_status': 'not_enough_information',
             'claim_status_justification': 'No images could be processed to verify the claim.',
             'supporting_image_ids': 'none',
-            'valid_image': preprocessed['valid_image'],
+            'valid_image': False,
             'severity': 'unknown'
         }
 
@@ -140,9 +158,13 @@ def apply_claim_decision(preprocessed: Dict, vision_result: Optional[Dict], evid
             {'risk_flags': 'none', 'image_quality_issues': 'none', 'manipulation_suspected': False},
             preprocessed, history
         )
+        valid_img = _compute_valid_image(
+            {'risk_flags': 'none', 'image_quality_issues': 'none', 'manipulation_suspected': False},
+            preprocessed
+        )
         return {
             'user_id': preprocessed['user_id'],
-            'image_paths': ';'.join(preprocessed['image_ids']),
+            'image_paths': orig_paths,
             'user_claim': preprocessed['user_claim'],
             'claim_object': claim_object,
             'evidence_standard_met': False,
@@ -153,7 +175,7 @@ def apply_claim_decision(preprocessed: Dict, vision_result: Optional[Dict], evid
             'claim_status': 'not_enough_information',
             'claim_status_justification': 'Vision analysis returned no results.',
             'supporting_image_ids': 'none',
-            'valid_image': preprocessed['valid_image'],
+            'valid_image': valid_img,
             'severity': 'unknown'
         }
 
@@ -168,6 +190,8 @@ def apply_claim_decision(preprocessed: Dict, vision_result: Optional[Dict], evid
     manipulation_suspected = vision_result.get('manipulation_suspected', False)
 
     risk_flags_str = _build_risk_flags(vision_result, preprocessed, history)
+
+    valid_img = _compute_valid_image(vision_result, preprocessed)
 
     valid_parts = ALLOWED_OBJECT_PARTS.get(claim_object, ['unknown'])
     if object_part not in valid_parts:
@@ -226,7 +250,7 @@ def apply_claim_decision(preprocessed: Dict, vision_result: Optional[Dict], evid
 
     return {
         'user_id': preprocessed['user_id'],
-        'image_paths': ';'.join(preprocessed['image_ids']),
+        'image_paths': orig_paths,
         'user_claim': preprocessed['user_claim'],
         'claim_object': claim_object,
         'evidence_standard_met': evidence_met and not (manipulation_suspected or trust_manipulation),
@@ -237,6 +261,6 @@ def apply_claim_decision(preprocessed: Dict, vision_result: Optional[Dict], evid
         'claim_status': claim_status,
         'claim_status_justification': justification,
         'supporting_image_ids': supporting_ids_str,
-        'valid_image': preprocessed['valid_image'],
+        'valid_image': valid_img,
         'severity': severity
     }

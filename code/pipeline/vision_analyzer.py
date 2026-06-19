@@ -2,13 +2,19 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from config import CACHE_DIR, CACHE_ENABLED, VISION_MODEL, STRUCTURED_OUTPUT_SCHEMA
+from config import (
+    ALLOWED_ISSUE_TYPES,
+    ALLOWED_OBJECT_PARTS,
+    CACHE_DIR,
+    CACHE_ENABLED,
+    STRUCTURED_OUTPUT_SCHEMA,
+    VISION_MODEL,
+)
+from pipeline.llm_router import ConfigurationError, extract_json, get_token_usage, llm_complete_with_fallback
 from utils.cache import ResponseCache
 from utils.image_utils import resize_image
 from utils.rate_limiter import AdaptiveRateLimiter
 from utils.token_tracker import TokenTracker
-
-from pipeline.llm_router import ConfigurationError, extract_json, get_token_usage, llm_complete_with_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -22,14 +28,19 @@ SYSTEM_PROMPT = SYSTEM_PROMPT_PATH.read_text(encoding='utf-8') if SYSTEM_PROMPT_
 
 def _build_prompt(claim_object: str, user_claim: str, minimum_evidence: str, image_ids: List[str]) -> str:
     image_section = '\n'.join([f'Image {i+1}: {img_id}' for i, img_id in enumerate(image_ids)])
+    valid_parts = ALLOWED_OBJECT_PARTS.get(claim_object, ['unknown'])
+    parts_str = ', '.join(valid_parts)
+    issue_types_str = ', '.join(ALLOWED_ISSUE_TYPES)
     return (
         f"Object type: {claim_object}\n"
         f"User claim: {user_claim}\n"
         f"Minimum evidence required: {minimum_evidence}\n\n"
         f"Submitted images:\n{image_section}\n\n"
+        f"Valid issue types for this object: {issue_types_str}\n"
+        f"Valid object parts for {claim_object}: {parts_str}\n\n"
         f"Review all images together and determine:\n"
         f"1. What issue type is visible (if any) — single overall assessment\n"
-        f"2. Which object part is affected\n"
+        f"2. Which object part is affected (must be from the valid parts list)\n"
         f"3. The confidence level of your assessment\n"
         f"4. Which image IDs support your finding\n"
         f"5. Whether evidence standard is met\n"

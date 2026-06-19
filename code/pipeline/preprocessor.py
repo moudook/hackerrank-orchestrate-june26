@@ -87,6 +87,7 @@ def preprocess_claim(row: pd.Series, user_history_df: pd.DataFrame) -> Dict:
             'claim_object': str(row.get('claim_object', '')).strip().lower(),
             'user_claim': user_claim,
             'image_paths': [],
+            'original_image_paths': '',
             'image_ids': [],
             'history': None,
             'valid_image': False
@@ -101,6 +102,8 @@ def preprocess_claim(row: pd.Series, user_history_df: pd.DataFrame) -> Dict:
     if len(parts) > 4:
         logger.warning(f"Truncating {len(parts)} images to 4 for user {row.get('user_id')}")
         parts = parts[:4]
+
+    original_image_paths = ';'.join(parts)
 
     image_ids = []
     valid_paths = []
@@ -129,6 +132,7 @@ def preprocess_claim(row: pd.Series, user_history_df: pd.DataFrame) -> Dict:
         'claim_object': str(row.get('claim_object', '')).strip().lower(),
         'user_claim': user_claim,
         'image_paths': valid_paths,
+        'original_image_paths': original_image_paths,
         'image_ids': image_ids,
         'history': history_dict,
         'valid_image': len(valid_paths) > 0
