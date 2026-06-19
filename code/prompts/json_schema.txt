@@ -1,0 +1,56 @@
+{
+    "type": "object",
+    "properties": {
+        "issue_type": {
+            "type": "string",
+            "enum": ["dent", "scratch", "crack", "glass_shatter", "broken_part", "missing_part", "torn_packaging", "crushed_packaging", "water_damage", "stain", "none", "unknown"]
+        },
+        "object_part": {
+            "type": "string"
+        },
+        "confidence": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+        },
+        "supporting_image_ids": {
+            "type": "array",
+            "items": {"type": "string"}
+        },
+        "evidence_standard_met": {
+            "type": "boolean"
+        },
+        "visual_description": {
+            "type": "string",
+            "maxLength": 120
+        },
+        "severity": {
+            "type": "string",
+            "enum": ["none", "low", "medium", "high", "unknown"]
+        },
+        "image_quality": {
+            "type": "string",
+            "enum": ["good", "fair", "poor"]
+        },
+        "image_quality_issues": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": ["blurry", "dark", "glare", "cropped", "obstructed", "wrong_angle", "none"]
+            }
+        },
+        "manipulation_suspected": {
+            "type": "boolean"
+        },
+        "risk_flags": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": ["none", "blurry_image", "cropped_or_obstructed", "low_light_or_glare", "wrong_angle", "wrong_object", "wrong_object_part", "damage_not_visible", "claim_mismatch", "possible_manipulation", "non_original_image", "text_instruction_present", "user_history_risk", "manual_review_required"]
+            }
+        }
+    },
+    "required": ["issue_type", "object_part", "confidence", "supporting_image_ids",
+                  "evidence_standard_met", "visual_description", "severity",
+                  "image_quality", "image_quality_issues", "manipulation_suspected", "risk_flags"]
+}

@@ -1,4 +1,5 @@
 import time
+import threading
 
 
 class TokenTracker:
@@ -7,13 +8,16 @@ class TokenTracker:
         self.output_tokens = 0
         self.calls = 0
         self.start_time = time.time()
+        self.lock = threading.Lock()
 
     def add_input(self, n):
-        self.input_tokens += n
+        with self.lock:
+            self.input_tokens += n
 
     def add_output(self, n):
-        self.output_tokens += n
-        self.calls += 1
+        with self.lock:
+            self.output_tokens += n
+            self.calls += 1
 
     def get_cost(self):
         return (self.input_tokens / 1e6 * 0.10) + (self.output_tokens / 1e6 * 0.40)

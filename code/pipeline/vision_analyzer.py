@@ -1,63 +1,46 @@
 import json
-import re
+import os
 import logging
+from pathlib import Path
 from google import genai
-from google.genai import errors
+from google.genai import errors, types
 from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception
 
-from config import GEMINI_API_KEY, MODEL_NAME
+from config import GEMINI_API_KEY, MODEL_NAME, STRUCTURED_OUTPUT_SCHEMA
 from utils.image_utils import resize_image
 
 logger = logging.getLogger(__name__)
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+client = genai.Client(
+    api_key=GEMINI_API_KEY,
+    http_options=types.HttpOptions(timeout=180_000)
+)
 
 TOKENS_PER_512_IMAGE = 258
 
+SYSTEM_PROMPT_PATH = Path(__file__).resolve().parent.parent / 'prompts' / 'system_vision.txt'
+SYSTEM_PROMPT = SYSTEM_PROMPT_PATH.read_text(encoding='utf-8') if SYSTEM_PROMPT_PATH.exists() else ''
 
-def _build_prompt(claim_object, user_claim, minimum_evidence):
+
+def _build_prompt(claim_object, user_claim, minimum_evidence, image_ids):
+    image_section = '\n'.join([f'Image {i+1}: {img_id}' for i, img_id in enumerate(image_ids)])
     return (
-        f"You are a damage verification system. Analyze images and user claim.\n\n"
         f"Object type: {claim_object}\n"
-        f'User claim: "{user_claim}"\n'
+        f"User claim: {user_claim}\n"
         f"Minimum evidence required: {minimum_evidence}\n\n"
-        f"Return STRICT JSON only:\n"
-        f"{{\n"
-        f'  "issue_type": "dent|scratch|crack|glass_shatter|broken_part|missing_part|torn_packaging|crushed_packaging|water_damage|stain|none|unknown",\n'
-        f'  "object_part": "exact_part_name",\n'
-        f'  "confidence": 0.0-1.0,\n'
-        f'  "supporting_image_ids": ["img_1"],\n'
-        f'  "evidence_standard_met": true,\n'
-        f'  "visual_description": "max 15 words",\n'
-        f'  "severity": "none|low|medium|high|unknown"\n'
-        f"}}\n\n"
-        f"Rules:\n"
-        f"- Use 'none' only if part is clearly visible and undamaged\n"
-        f"- Use 'unknown' if image is blurry or part not visible\n"
-        f"- object_part must match allowed list for {claim_object}\n"
-        f"- No extra text, no markdown"
+        f"Submitted images:\n{image_section}\n\n"
+        f"Analyze each image carefully. Determine:\n"
+        f"1. What issue type is visible (if any)\n"
+        f"2. Which object part is affected\n"
+        f"3. The confidence level of your assessment\n"
+        f"4. Which image IDs support your finding\n"
+        f"5. Whether evidence standard is met\n"
+        f"6. The severity of the damage\n"
+        f"7. The quality of each image (blurry, dark, etc.)\n"
+        f"8. Whether manipulation is suspected\n"
+        f"9. Any risk flags that apply\n\n"
+        f"Return ONLY valid JSON matching the provided schema."
     )
-
-
-def _parse_json_response(text):
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-    match = re.search(r'\{.*\}', text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group())
-        except json.JSONDecodeError:
-            pass
-    match = re.search(r'```(?:json)?\s*(.*?)\s*```', text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1))
-        except json.JSONDecodeError:
-            pass
-    return None
 
 
 def _estimate_tokens(prompt, num_images):
@@ -77,7 +60,7 @@ def _is_retryable(exception):
     stop=stop_after_attempt(5),
     retry=retry_if_exception(_is_retryable)
 )
-def analyze_with_gemini(images, prompt, token_tracker):
+def analyze_with_gemini(images, prompt, image_ids, token_tracker):
     processed_images = []
     for img_path in images:
         pil_img = resize_image(img_path)
@@ -86,17 +69,34 @@ def analyze_with_gemini(images, prompt, token_tracker):
     input_tokens = _estimate_tokens(prompt, len(processed_images))
     token_tracker.add_input(input_tokens)
 
+    contents = []
+    for i, pil_img in enumerate(processed_images):
+        img_id = image_ids[i] if i < len(image_ids) else f'img_{i+1}'
+        contents.append(f'=== Image {i+1}: {img_id} ===')
+        contents.append(pil_img)
+    contents.append(prompt)
+
+    generation_config = types.GenerateContentConfig(
+        temperature=0.0,
+        top_p=0.95,
+        response_mime_type='application/json',
+        response_json_schema=STRUCTURED_OUTPUT_SCHEMA,
+        system_instruction=SYSTEM_PROMPT if SYSTEM_PROMPT else None,
+    )
+
     response = client.models.generate_content(
         model=MODEL_NAME,
-        contents=[prompt] + processed_images
+        contents=contents,
+        config=generation_config,
     )
 
     output_tokens = int(len(response.text.split()) * 1.3)
     token_tracker.add_output(output_tokens)
 
-    parsed = _parse_json_response(response.text)
-    if parsed is None:
-        logger.error(f"Failed to parse Gemini response: {response.text[:200]}")
+    try:
+        parsed = json.loads(response.text)
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.error(f"Failed to parse structured response: {e}")
         return None
 
     if 'confidence' in parsed and isinstance(parsed['confidence'], str):
@@ -108,6 +108,12 @@ def analyze_with_gemini(images, prompt, token_tracker):
     if 'supporting_image_ids' in parsed and isinstance(parsed['supporting_image_ids'], list):
         parsed['supporting_image_ids'] = ';'.join(parsed['supporting_image_ids'])
 
+    if 'risk_flags' in parsed and isinstance(parsed['risk_flags'], list):
+        parsed['risk_flags'] = ';'.join(parsed['risk_flags']) if parsed['risk_flags'] else 'none'
+
+    if 'image_quality_issues' in parsed and isinstance(parsed['image_quality_issues'], list):
+        parsed['image_quality_issues'] = ';'.join(parsed['image_quality_issues']) if parsed['image_quality_issues'] else 'none'
+
     return parsed
 
 
@@ -118,11 +124,12 @@ def run_vision_analysis(preprocessed, evidence_rule, token_tracker):
     prompt = _build_prompt(
         preprocessed['claim_object'],
         preprocessed['user_claim'],
-        evidence_rule.get('minimum_image_evidence', 'The claimed object and relevant part should be visible clearly.')
+        evidence_rule.get('minimum_image_evidence', 'The claimed object and relevant part should be visible clearly.'),
+        preprocessed['image_ids']
     )
 
     logger.info(f"Sending {len(preprocessed['image_paths'])} images to Gemini for user {preprocessed['user_id']}")
-    return analyze_with_gemini(preprocessed['image_paths'], prompt, token_tracker)
+    return analyze_with_gemini(preprocessed['image_paths'], prompt, preprocessed['image_ids'], token_tracker)
 
 
 FALLBACK_VISION_RESULT = {
@@ -133,6 +140,9 @@ FALLBACK_VISION_RESULT = {
     'evidence_standard_met': False,
     'visual_description': 'API call failed after retries',
     'severity': 'unknown',
+    'image_quality': 'poor',
+    'image_quality_issues': 'none',
+    'manipulation_suspected': False,
     'risk_flags': 'manual_review_required'
 }
 

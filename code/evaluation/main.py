@@ -1,10 +1,12 @@
 import sys
 import os
 import logging
+import concurrent.futures
 
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(__file__), '..')))
 
-logging.basicConfig(level=logging.INFO, format='%(levelname)s | %(message)s')
+from utils.logger import setup_logging
+setup_logging()
 logger = logging.getLogger(__name__)
 
 import pandas as pd
@@ -28,7 +30,6 @@ OUTPUT_COLUMNS = [
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 REPORT_OUTPUT_PATH = os.path.join(REPO_ROOT, 'evaluation_report.md')
-
 REPORT_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'report_template.md')
 
 
@@ -40,20 +41,25 @@ def run_evaluation():
     token_tracker = TokenTracker()
     rate_limiter = RateLimiter()
 
-    total_images = 0
-    results = []
-    for idx, (_, row) in enumerate(sample.iterrows()):
+    def evaluate_single_claim(item):
+        idx, row = item
         logger.info(f"[{idx+1}/{len(sample)}] Evaluating user={row['user_id']}")
 
         preprocessed = preprocess_claim(row, user_history)
-        total_images += len(preprocessed['image_ids'])
+        num_images = len(preprocessed['image_ids'])
 
         evidence_rule = get_relevant_rule(preprocessed['claim_object'], preprocessed['user_claim'], evidence)
         vision_result = safe_run_vision_analysis(preprocessed, evidence_rule, token_tracker, rate_limiter)
         decision = apply_claim_decision(preprocessed, vision_result, evidence_rule)
         validated = validate_output(decision)
 
-        results.append(validated)
+        return validated, num_images
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        mapped_results = list(executor.map(evaluate_single_claim, sample.iterrows()))
+
+    results = [res[0] for res in mapped_results]
+    total_images = sum(res[1] for res in mapped_results)
 
     pred_df = pd.DataFrame(results, columns=OUTPUT_COLUMNS)
     metrics, merged = compute_accuracy(pred_df, sample)
@@ -62,10 +68,6 @@ def run_evaluation():
     elapsed = summary['elapsed_seconds']
     total = len(sample)
     avg_latency = round(elapsed / total, 1) if total else 0.0
-
-    true_positives = (merged['claim_status_true'] == merged['claim_status_pred']).sum()
-    true_positives_col = (merged['claim_status_true'] == merged['claim_status_pred']) & (merged['claim_status_pred'] != 'not_enough_information')
-    tp_count = int(true_positives_col.sum())
 
     report_vars = {
         'n': total,

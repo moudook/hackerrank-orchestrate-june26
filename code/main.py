@@ -1,10 +1,12 @@
 import sys
 import os
 import logging
+import concurrent.futures
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-logging.basicConfig(level=logging.INFO, format='%(levelname)s | %(message)s')
+from utils.logger import setup_logging
+setup_logging()
 logger = logging.getLogger(__name__)
 
 import pandas as pd
@@ -17,6 +19,7 @@ from pipeline.postprocessor import apply_claim_decision
 from pipeline.validator import validate_output
 from utils.token_tracker import TokenTracker
 from utils.rate_limiter import RateLimiter
+from config import CACHE_ENABLED, CACHE_DIR
 
 OUTPUT_COLUMNS = [
     'user_id', 'image_paths', 'user_claim', 'claim_object',
@@ -36,24 +39,26 @@ def main():
     token_tracker = TokenTracker()
     rate_limiter = RateLimiter()
 
-    results = []
-    for idx, (_, row) in enumerate(claims.iterrows()):
+    if CACHE_ENABLED and not os.path.exists(CACHE_DIR):
+        os.makedirs(CACHE_DIR, exist_ok=True)
+
+    def process_single_claim(item):
+        idx, row = item
         logger.info(f"[{idx+1}/{len(claims)}] Processing user={row['user_id']}, object={row['claim_object']}")
 
         preprocessed = preprocess_claim(row, user_history)
-
         evidence_rule = get_relevant_rule(preprocessed['claim_object'], preprocessed['user_claim'], evidence)
-
         vision_result = safe_run_vision_analysis(preprocessed, evidence_rule, token_tracker, rate_limiter)
-
         decision = apply_claim_decision(preprocessed, vision_result, evidence_rule)
-
         validated = validate_output(decision)
-
-        results.append(validated)
 
         if (idx + 1) % 5 == 0:
             logger.info(f"Progress: {idx+1}/{len(claims)} processed, cost so far: ${token_tracker.get_cost():.4f}")
+
+        return validated
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        results = list(executor.map(process_single_claim, claims.iterrows()))
 
     output_df = pd.DataFrame(results, columns=OUTPUT_COLUMNS)
     output_df.to_csv(OUTPUT_PATH, index=False, quoting=1)

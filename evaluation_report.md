@@ -15,7 +15,7 @@
 - Total input tokens: 11620
 - Total output tokens: 0
 - Total images processed: 29
-- Average latency per claim: 3.0 seconds
+- Average latency per claim: 1.8 seconds
 - Estimated cost: $0.0012
 - Peak TPM: 11620
 - Peak RPM: 0

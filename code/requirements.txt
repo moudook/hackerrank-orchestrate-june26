@@ -1,5 +1,5 @@
-google-genai
-pandas
-pillow
-python-dotenv
-tenacity
+google-genai>=1.0.0
+pandas>=2.0.0
+pillow>=10.0.0
+python-dotenv>=1.0.0
+tenacity>=8.0.0
