@@ -20,8 +20,6 @@ RATE_LIMIT_RPM = int(os.getenv('RATE_LIMIT_RPM', '2000'))
 RATE_LIMIT_TPM = int(os.getenv('RATE_LIMIT_TPM', '4000000'))
 CACHE_ENABLED = os.getenv('CACHE_ENABLED', 'true').lower() in ('true', '1', 'yes')
 CACHE_DIR = os.getenv('CACHE_DIR', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.cache'))
-SAFEGUARD_ENABLED = os.getenv('SAFEGUARD_ENABLED', 'true').lower() in ('true', '1', 'yes')
-TEMP_DIR = os.getenv('TEMP_DIR', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.tmp'))
 MAX_WORKERS = int(os.getenv('MAX_WORKERS', '5'))
 
 ALLOWED_ISSUE_TYPES = ['dent', 'scratch', 'crack', 'glass_shatter', 'broken_part',
@@ -95,6 +93,9 @@ def validate_config() -> bool:
 
     if MAX_IMAGES_PER_CALL < 1 or MAX_IMAGES_PER_CALL > 10:
         errors.append(f"MAX_IMAGES_PER_CALL={MAX_IMAGES_PER_CALL} is out of range (1-10)")
+
+    if MAX_WORKERS < 1 or MAX_WORKERS > 20:
+        errors.append(f"MAX_WORKERS={MAX_WORKERS} is out of range (1-20)")
 
     if RATE_LIMIT_RPM < 1:
         errors.append(f"RATE_LIMIT_RPM={RATE_LIMIT_RPM} is invalid")

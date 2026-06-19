@@ -20,7 +20,7 @@ class TokenTracker:
             self.calls += 1
 
     def get_cost(self):
-        return (self.input_tokens / 1e6 * 0.10) + (self.output_tokens / 1e6 * 0.40)
+        return (self.input_tokens / 1e6 * 0.60) + (self.output_tokens / 1e6 * 3.00)
 
     def elapsed_seconds(self):
         return time.time() - self.start_time
