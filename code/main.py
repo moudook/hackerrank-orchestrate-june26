@@ -20,7 +20,7 @@ from pipeline.postprocessor import apply_claim_decision
 from pipeline.preprocessor import preprocess_claim
 from pipeline.safety_gate import evaluate_safety_gate
 from pipeline.validator import validate_output
-from pipeline.vision_analyzer import safe_run_vision_analysis
+from pipeline.vision_analyzer import safe_run_vision_analysis, pre_vlm_forensics_scan
 from utils.checkpoint import CheckpointManager
 from utils.rate_limiter import AdaptiveRateLimiter
 from utils.token_tracker import TokenTracker
@@ -66,7 +66,9 @@ def process_single_claim(idx: int, row: pd.Series, user_history: pd.DataFrame, e
     preprocessed = preprocess_claim(row, user_history)
     evidence_rule = get_relevant_rule(preprocessed['claim_object'], preprocessed['user_claim'], evidence)
 
-    gate_result = evaluate_safety_gate(preprocessed)
+    forensics_result = pre_vlm_forensics_scan(preprocessed.get('image_paths', []))
+
+    gate_result = evaluate_safety_gate(preprocessed, forensics_result=forensics_result)
 
     rate_limiter.acquire()
     try:

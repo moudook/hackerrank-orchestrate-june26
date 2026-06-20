@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import litellm
 from PIL import Image
 
-
 logger = logging.getLogger(__name__)
 
 LLM_PROVIDER = os.getenv('LLM_PROVIDER', '')

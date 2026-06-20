@@ -10,6 +10,7 @@ from config import (
     STRUCTURED_OUTPUT_SCHEMA,
     VISION_MODEL,
 )
+from pipeline.image_forensics import scan_images_batch
 from pipeline.llm_router import ConfigurationError, extract_json, get_token_usage, llm_complete_with_fallback
 from utils.cache import ResponseCache
 from utils.image_utils import resize_image
@@ -136,9 +137,24 @@ def analyze_with_llm(images: List[str], prompt: str, image_ids: List[str], token
     return parsed
 
 
+def pre_vlm_forensics_scan(image_paths: List[str]) -> Dict:
+    if not image_paths:
+        return {'risk_flags': [], 'anomalies': [], 'has_suspicious_content': False, 'combined_ocr_text': ''}
+
+    result = scan_images_batch(image_paths)
+
+    if result['has_suspicious_content']:
+        logger.warning(f"Pre-VLM forensics detected suspicious content in {len(image_paths)} images: {result['risk_flags']}")
+
+    return result
+
+
 def run_vision_analysis(preprocessed: Dict, evidence_rule: Dict, token_tracker: TokenTracker, rate_limiter: Optional[AdaptiveRateLimiter] = None) -> Optional[Dict]:
     if not preprocessed['valid_image']:
         return None
+
+    forensics_result = pre_vlm_forensics_scan(preprocessed.get('image_paths', []))
+    preprocessed['_forensics_result'] = forensics_result
 
     prompt = _build_prompt(
         preprocessed['claim_object'],
